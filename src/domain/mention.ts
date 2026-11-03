@@ -22,6 +22,11 @@ export function parseMentions(body: string): string[] {
 	return ids;
 }
 
+/** 纯文本场景（通知摘录）：`@[名字](user:id)` → `@名字`，别把 user id 露给人看 */
+export function mentionsToPlain(body: string): string {
+	return body.replace(MENTION, "@$1");
+}
+
 /** 编辑评论时只通知新加的 @，已通知过的不再打扰 */
 export function addedMentions(
 	before: readonly string[],

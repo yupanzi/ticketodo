@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { addedMentions, formatMention, parseMentions } from "./mention";
+import {
+	addedMentions,
+	formatMention,
+	mentionsToPlain,
+	parseMentions,
+} from "./mention";
 
 describe("parseMentions", () => {
 	it("解析出 user id，去重保序", () => {
@@ -22,5 +27,12 @@ describe("parseMentions", () => {
 describe("addedMentions", () => {
 	it("编辑后只算新加的", () => {
 		expect(addedMentions(["u1", "u2"], ["u2", "u3"])).toEqual(["u3"]);
+	});
+});
+
+describe("mentionsToPlain", () => {
+	it("提及变成 @名字，不露 user id", () => {
+		const body = `${formatMention("张三", "u1")} 看下`;
+		expect(mentionsToPlain(body)).toBe("@张三 看下");
 	});
 });

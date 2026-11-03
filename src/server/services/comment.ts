@@ -1,6 +1,10 @@
 import { asc, eq, inArray } from "drizzle-orm";
 
-import { addedMentions, parseMentions } from "~/domain/mention";
+import {
+	addedMentions,
+	mentionsToPlain,
+	parseMentions,
+} from "~/domain/mention";
 import { recipientsFor } from "~/domain/notify";
 import {
 	canComment,
@@ -34,7 +38,7 @@ export interface CommentView {
 }
 
 function excerpt(body: string): string {
-	const flat = body.replace(/\s+/g, " ").trim();
+	const flat = mentionsToPlain(body).replace(/\s+/g, " ").trim();
 	return flat.length > 80 ? `${flat.slice(0, 79)}…` : flat;
 }
 
