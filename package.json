@@ -29,6 +29,7 @@
 		"prepare": "husky || true"
 	},
 	"dependencies": {
+		"@better-auth/core": "1.7.15",
 		"@dnd-kit/core": "^6.3.1",
 		"@dnd-kit/utilities": "^3.2.2",
 		"@tanstack/react-query": "^5.105.3",

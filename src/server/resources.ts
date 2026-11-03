@@ -16,6 +16,12 @@ export const MIGRATIONS = {
 	schema: "public",
 } as const;
 
+/**
+ * better-auth 的 cookie 前缀。同一个域名（本机 localhost 尤其）下别的 better-auth 应用默认也叫
+ * `better-auth.*`，不改会互相覆盖会话。`proxy.ts` 判断有无会话 cookie 时读同一个值。
+ */
+export const AUTH_COOKIE_PREFIX = "ticketodo";
+
 // advisory lock 的键空间是 per-database 全局的，表前缀护不住
 const LOCK_NAMESPACE = "ticketodo";
 
