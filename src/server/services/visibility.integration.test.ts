@@ -61,8 +61,7 @@ describe.skipIf(!hasTestDb)("visibleItemsWhere 与 canView 一致", () => {
 		const [ownTodo] = rows.filter(
 			(r) => r.type === "todo" && r.deletedAt === null,
 		);
-		expect(canView({ id: other.user.id, role: "member" }, ownTodo!)).toBe(
-			false,
-		);
+		if (!ownTodo) throw new Error("应有未删除的 todo");
+		expect(canView({ id: other.user.id, role: "member" }, ownTodo)).toBe(false);
 	});
 });

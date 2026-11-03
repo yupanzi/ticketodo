@@ -108,7 +108,7 @@ describe.skipIf(!hasTestDb)("item API", () => {
 				.map((c) => Number(c.split("-")[2]))
 				.sort((a, b) => a - b);
 			expect(new Set(codes).size).toBe(20);
-			expect(seqs.at(-1)! - seqs[0]!).toBe(19);
+			expect((seqs.at(-1) ?? 0) - (seqs[0] ?? 0)).toBe(19);
 		});
 	});
 
@@ -424,8 +424,9 @@ describe.skipIf(!hasTestDb)("item API", () => {
 			await newTicket(reporter, me);
 			await newTicket(reporter, me);
 			expect(await me.api.notification.unreadCount()).toBe(2);
-			const { items } = await me.api.notification.list({});
-			await me.api.notification.markRead({ ids: [items[0]!.id] });
+			const [first] = (await me.api.notification.list({})).items;
+			if (!first) throw new Error("应有通知");
+			await me.api.notification.markRead({ ids: [first.id] });
 			expect(await me.api.notification.unreadCount()).toBe(1);
 			await me.api.notification.markAllRead();
 			expect(await me.api.notification.unreadCount()).toBe(0);
