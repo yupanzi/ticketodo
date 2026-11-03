@@ -162,6 +162,8 @@ export interface ListFilters {
 	reporterId?: string;
 	tagId?: number;
 	overdue?: boolean;
+	/** 期望完成日期是北京今天、仍在进行中 */
+	dueToday?: boolean;
 	q?: string;
 	cursor?: number;
 	limit: number;
@@ -195,6 +197,13 @@ export async function listItems(
 				inArray(items.status, [...ACTIVE_STATUSES]),
 			),
 		);
+	if (f.dueToday)
+		conds.push(
+			and(
+				sql`${items.dueDate} = ${todaySql}`,
+				inArray(items.status, [...ACTIVE_STATUSES]),
+			),
+		);
 	const q = f.q?.trim();
 	if (q) {
 		// 单号精确找；标题模糊找（% 与 _ 当普通字符）
@@ -214,6 +223,37 @@ export async function listItems(
 		items: await withTags(ctx.db, page),
 		nextCursor: rows.length > f.limit ? (page.at(-1)?.id ?? null) : null,
 	};
+}
+
+export interface MySummary {
+	/** 我负责、进行中、已过期望完成日期 */
+	overdue: number;
+	/** 我负责、进行中、今天到期 */
+	dueToday: number;
+	/** 我提的 ticket，负责人标了已解决、等我确认关闭 */
+	awaitingConfirmation: number;
+	/** 我负责、进行中 */
+	active: number;
+}
+
+/** 首页「今日概览」：一条 SQL 用 FILTER 算齐四个数，与列表的筛选口径一致 */
+export async function mySummary(ctx: ServiceContext): Promise<MySummary> {
+	const me = ctx.actor.id;
+	const mineActive = sql`${items.assigneeId} = ${me} AND ${items.status} IN ('open', 'in_progress')`;
+	const count = (cond: SQL) =>
+		sql<number>`count(*) FILTER (WHERE ${cond})`.mapWith(Number);
+	const [row] = await ctx.db
+		.select({
+			overdue: count(sql`${mineActive} AND ${items.dueDate} < ${todaySql}`),
+			dueToday: count(sql`${mineActive} AND ${items.dueDate} = ${todaySql}`),
+			awaitingConfirmation: count(
+				sql`${items.reporterId} = ${me} AND ${items.type} = 'ticket' AND ${items.status} = 'resolved'`,
+			),
+			active: count(mineActive),
+		})
+		.from(items)
+		.where(visibleItemsWhere(ctx.actor));
+	return row ?? { overdue: 0, dueToday: 0, awaitingConfirmation: 0, active: 0 };
 }
 
 export type BoardScope = "mine" | "reported" | "all";

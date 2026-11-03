@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { and, eq, sql } from "drizzle-orm";
 import { beforeAll, describe, expect, it } from "vitest";
 
+import { addDays, todayInAppTz } from "~/domain/due";
 import { formatMention } from "~/domain/mention";
 import { auditLogs, notifications } from "~/server/db/schema";
 import { AUDIT_ACTIONS } from "~/server/resources";
@@ -363,6 +364,36 @@ describe.skipIf(!hasTestDb)("item API", () => {
 			).items.map((i) => i.code);
 			expect(codes).toContain(overdue);
 			expect(codes).not.toContain(future);
+		});
+	});
+
+	describe("今日概览", () => {
+		it("四个数与列表筛选同一口径", async () => {
+			const me = await actor({ name: "概览" });
+			const today = todayInAppTz();
+			const overdue = await newTicket(reporter, me, {
+				dueDate: addDays(today, -1),
+			});
+			await newTicket(reporter, me, { dueDate: today });
+			await newTicket(reporter, me);
+			const mineReported = await newTicket(me, assignee);
+			await assignee.api.item.transition({
+				code: mineReported,
+				to: "resolved",
+			});
+
+			expect(await me.api.item.summary()).toEqual({
+				overdue: 1,
+				dueToday: 1,
+				awaitingConfirmation: 1,
+				active: 3,
+			});
+			const listed = async (f: { overdue?: boolean; dueToday?: boolean }) =>
+				(await me.api.item.list({ ...f, assigneeId: me.user.id })).items.map(
+					(i) => i.code,
+				);
+			expect(await listed({ overdue: true })).toEqual([overdue]);
+			expect(await listed({ dueToday: true })).toHaveLength(1);
 		});
 	});
 

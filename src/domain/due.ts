@@ -42,3 +42,19 @@ export function dueState(
 	if (dueDate <= addDays(today, 1)) return "due_soon";
 	return "normal";
 }
+
+function daysBetween(from: string, to: string): number {
+	return Math.round(
+		(Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) /
+			86_400_000,
+	);
+}
+
+/** 到期的人话：逾期 N 天 / 今天到期 / 明天到期；其余返回 null，由调用方显示日期 */
+export function dueLabel(dueDate: string, today: string): string | null {
+	const diff = daysBetween(today, dueDate);
+	if (diff < 0) return `逾期 ${-diff} 天`;
+	if (diff === 0) return "今天到期";
+	if (diff === 1) return "明天到期";
+	return null;
+}

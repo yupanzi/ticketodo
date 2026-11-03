@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { addDays, dueState, todayInAppTz } from "./due";
+import { addDays, dueLabel, dueState, todayInAppTz } from "./due";
 
 describe("todayInAppTz", () => {
 	// 容器是 UTC：北京时间零点前后最容易算错
@@ -34,5 +34,16 @@ describe("dueState", () => {
 		expect(dueState("2026-11-01", "resolved", today)).toBeNull();
 		expect(dueState("2026-11-01", "closed", today)).toBeNull();
 		expect(dueState(null, "open", today)).toBeNull();
+	});
+});
+
+describe("dueLabel", () => {
+	it("逾期 N 天 / 今天 / 明天，其余交给调用方显示日期", () => {
+		expect(dueLabel("2026-11-01", "2026-11-03")).toBe("逾期 2 天");
+		expect(dueLabel("2026-11-03", "2026-11-03")).toBe("今天到期");
+		expect(dueLabel("2026-11-04", "2026-11-03")).toBe("明天到期");
+		expect(dueLabel("2026-11-09", "2026-11-03")).toBeNull();
+		// 跨月
+		expect(dueLabel("2026-10-31", "2026-11-01")).toBe("逾期 1 天");
 	});
 });

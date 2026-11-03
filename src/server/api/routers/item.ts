@@ -22,6 +22,7 @@ import {
 	deleteItem,
 	getItem,
 	listItems,
+	mySummary,
 	restoreItem,
 	timeline,
 	transitionItem,
@@ -74,12 +75,15 @@ export const itemRouter = createTRPCRouter({
 				reporterId: userId.optional(),
 				tagId: z.number().int().positive().optional(),
 				overdue: z.boolean().optional(),
+				dueToday: z.boolean().optional(),
 				q: z.string().max(100).optional(),
 				cursor: z.number().int().positive().optional(),
 				limit: z.number().int().min(1).max(100).default(50),
 			}),
 		)
 		.query(({ ctx, input }) => listItems(ctx.svc, input)),
+
+	summary: protectedProcedure.query(({ ctx }) => mySummary(ctx.svc)),
 
 	board: protectedProcedure
 		.input(z.object({ scope: z.enum(["mine", "reported", "all"]) }))
