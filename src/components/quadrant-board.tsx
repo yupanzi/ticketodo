@@ -32,6 +32,7 @@ import { Tabs, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { dueState, todayInAppTz } from "~/domain/due";
 import { canEdit } from "~/domain/policy";
 import { PRIORITIES, PRIORITY_META, type Priority } from "~/domain/priority";
+import { listHref } from "~/lib/item-filters";
 import { cn } from "~/lib/utils";
 import { type RouterOutputs, useTRPC } from "~/trpc/react";
 
@@ -111,31 +112,35 @@ function StatCard({
 
 function Summary() {
 	const trpc = useTRPC();
+	const me = useMe();
 	const { data } = useQuery(trpc.item.summary.queryOptions());
 	return (
 		<div className="mb-6 grid grid-cols-2 gap-4 xl:grid-cols-4">
 			<StatCard
 				alert="red"
-				href="/items?mine=assigned&overdue=1"
+				href={listHref({ assigneeIds: [me.id], due: "overdue" })}
 				icon={AlarmClock}
 				label="已逾期"
 				value={data?.overdue}
 			/>
 			<StatCard
 				alert="amber"
-				href="/items?mine=assigned&due=today"
+				href={listHref({ assigneeIds: [me.id], due: "today" })}
 				icon={CalendarCheck}
 				label="今天到期"
 				value={data?.dueToday}
 			/>
 			<StatCard
-				href="/items?mine=reported&status=resolved"
+				href={listHref({ reporterIds: [me.id], statuses: ["resolved"] })}
 				icon={CircleCheckBig}
 				label="待我确认关闭"
 				value={data?.awaitingConfirmation}
 			/>
 			<StatCard
-				href="/items?mine=assigned&status=open,in_progress"
+				href={listHref({
+					assigneeIds: [me.id],
+					statuses: ["open", "in_progress"],
+				})}
 				icon={ListChecks}
 				label="我负责的进行中"
 				value={data?.active}

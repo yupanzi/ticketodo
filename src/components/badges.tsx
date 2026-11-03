@@ -50,6 +50,11 @@ const STATUS_STYLE: Record<
 	closed: { tone: "muted", dot: "text-muted-foreground/60" },
 };
 
+/** 状态的圆点单独用（筛选项里）：与 StatusBadge 同色 */
+export function StatusDot({ status }: { status: ItemStatus }) {
+	return <Dot className={cn("size-2", STATUS_STYLE[status].dot)} />;
+}
+
 export function StatusBadge({ status }: { status: ItemStatus }) {
 	const style = STATUS_STYLE[status];
 	return (

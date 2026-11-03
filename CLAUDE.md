@@ -17,7 +17,8 @@ ticket 与 todo 的记录、流转、通知与审计。登录只走 authentik（
 ```
 src/
 ├── domain/          纯逻辑、无 IO，前后端共用：priority · status（状态机）· policy（权限矩阵）
-│                    · item-code · due（北京时间）· diff · notify（收件人）· mention · identity · audit
+│                    · item-code · due（北京时间）· item-list（列表排序与到期筛选的词表）· diff
+│                    · notify（收件人）· mention · identity · audit
 ├── server/
 │   ├── env.ts       环境变量（web / task 两个子集，惰性求值）
 │   ├── log.ts       pino 根 logger · err 序列化与 SQL 参数脱敏
@@ -35,8 +36,10 @@ src/
 ├── trpc/            query-client · react（客户端 Provider）· server（RSC 预取）
 ├── app/             sign-in · (app)/{看板, items, items/new, items/[code], notifications, admin/*}
 │                    · api/{auth, trpc, healthz}
+├── lib/             format（日期显示，一律北京时间）· item-filters（列表筛选 ⇄ 地址栏）· auth-client
 ├── components/      layout（PageHeader · Panel · EmptyState · Field · PropertyList）· chip · badges
-│                    · app-shell（侧栏）· 各页组件；ui/ 是 shadcn 生成后调过尺寸的（Biome 不查）
+│                    · date-picker（唯一的日期输入）· list-filters（分面筛选）· app-shell（侧栏）
+│                    · 各页组件；ui/ 是 shadcn 生成后调过尺寸的（Biome 不查）
 ├── proxy.ts         定 x-request-id；页面无会话 cookie 去登录页
 ├── instrumentation.ts  启动校验 · onRequestError 走 pino
 ├── bin/             migrate · cron/dueremind（tsup 打成自包含 cjs）
@@ -84,6 +87,8 @@ charts/ticketodo/    Helm：Deployment + Service + Ingress + migrate hook + Cron
 - **要与审计 `at` 比较的时间戳取库的 `now()`**（`convertedAt`）：应用时钟比事务开始晚几毫秒，
   时间线截断会把「转换」那条自己截掉。
 - 编辑带 `expectedUpdatedAt`，别人先改了就 CONFLICT；只改标签也要刷新 `updatedAt`。
+- **列表分页是 keyset**（`listItems`）：排序键末位必须是 id；游标只传 id，排序值由服务端按 text 现查。
+  ⚠️ 别把排序值塞进游标：`updated_at` 是微秒，经 JS Date 截成毫秒会漏行。游标行看不见就返回空页。
 - date 列一律 `mode: "string"`：转成 Date 会被时区挪一天。
 
 ### 审计（`server/audit/`、`drizzle/0001_*`）
@@ -125,8 +130,11 @@ charts/ticketodo/    Helm：Deployment + Service + Ingress + migrate hook + Cron
   挑主次。
 - 页面一律 `PageHeader` + `Panel`（表格用 `Panel flush`，表头 `bg-muted/40`），小标签一律 `Chip`：
   别再手搓卡片与 badge。
+- **日期输入只用 `date-picker.tsx`**（`DatePicker` / `DateRangePicker` / `AppCalendar`），别用
+  `<input type="date">`；显示只走 `lib/format.ts`。值一律 `YYYY-MM-DD`，与 Date 的互转只在 date-picker 里。
+- 表格筛选用 `list-filters.tsx` 的分面按钮，排序点表头；状态都进地址栏（`lib/item-filters.ts`）。
 - ⚠️ **`ui/` 改过尺寸**（button · input · select · tabs · toggle · table · badge · command ·
-  input-group）：`shadcn add` 提示覆盖已有文件时一律拒绝；要升级某个组件先 diff，再把尺寸改回 token。
+  input-group · calendar）：`shadcn add` 提示覆盖已有文件时一律拒绝；要升级某个组件先 diff，再把尺寸改回 token。
 
 ### 构建期与运行时
 
@@ -168,6 +176,8 @@ charts/ticketodo/    Helm：Deployment + Service + Ingress + migrate hook + Cron
   `env`，敏感的进 Secret 与 `_helpers.tpl` 的 `$credentials`。
 - **新增变更**：服务层一个事务里「锁行 → 判权 → 改 → `auditInTx` → 通知」，procedure 加
   `.meta({ audit })`，权限规则先写进 `domain/policy.ts` 并补矩阵测试。
+- **列表新增筛选维度**：`listItems` + router 的 zod → `lib/item-filters.ts` 的 parse / toSearch（补
+  往返测试）→ `items-table.tsx` 工具栏。
 - 类型 import 一律 `import type`（`verbatimModuleSyntax`）；相对 import 不写扩展名。
 - `pnpm-workspace.yaml` 归 pnpm 管（`allowBuilds` 删不得），charts 归 helm lint：Biome 都不查。
 - 升 pnpm 用 `corepack use pnpm@<版本>`。新包刚发布时 pnpm 12 的 `minimumReleaseAge` 会拦，显式装

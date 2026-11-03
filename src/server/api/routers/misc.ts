@@ -32,6 +32,7 @@ import {
 	listUsersForAdmin,
 	searchUsers,
 	setUserRole,
+	usersByIds,
 } from "~/server/services/user";
 
 const code = z.string().trim().min(1).max(32);
@@ -92,6 +93,10 @@ export const userRouter = createTRPCRouter({
 			}),
 		)
 		.query(({ ctx, input }) => searchUsers(ctx.db, input.q, input.limit)),
+	/** 地址栏里的人员筛选只有 id，显示名字靠它 */
+	byIds: protectedProcedure
+		.input(z.object({ ids: z.array(z.string().min(1).max(64)).max(50) }))
+		.query(({ ctx, input }) => usersByIds(ctx.db, input.ids)),
 });
 
 export const notificationRouter = createTRPCRouter({

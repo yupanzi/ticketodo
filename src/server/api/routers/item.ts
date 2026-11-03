@@ -6,6 +6,7 @@ import {
 	ITEM_TYPES,
 	TITLE_MAX_LENGTH,
 } from "~/domain/item";
+import { DUE_PRESETS, ITEM_SORTS } from "~/domain/item-list";
 import { PRIORITIES } from "~/domain/priority";
 import { TAG_NAME_MAX_LENGTH } from "~/domain/tag";
 import {
@@ -68,15 +69,27 @@ export const itemRouter = createTRPCRouter({
 	list: protectedProcedure
 		.input(
 			z.object({
-				type: z.enum(ITEM_TYPES).optional(),
+				types: z.array(z.enum(ITEM_TYPES)).optional(),
 				statuses: z.array(z.enum(ITEM_STATUSES)).optional(),
 				priorities: z.array(z.enum(PRIORITIES)).optional(),
-				assigneeId: userId.optional(),
-				reporterId: userId.optional(),
-				tagId: z.number().int().positive().optional(),
-				overdue: z.boolean().optional(),
-				dueToday: z.boolean().optional(),
+				assigneeIds: z.array(userId).max(50).optional(),
+				reporterIds: z.array(userId).max(50).optional(),
+				tagIds: z.array(z.number().int().positive()).max(50).optional(),
+				due: z
+					.union([
+						z.enum(DUE_PRESETS),
+						z
+							.object({
+								from: z.iso.date().optional(),
+								to: z.iso.date().optional(),
+							})
+							.refine((r) => r.from || r.to, "起止日期至少给一个"),
+					])
+					.optional(),
 				q: z.string().max(100).optional(),
+				sort: z
+					.object({ by: z.enum(ITEM_SORTS), dir: z.enum(["asc", "desc"]) })
+					.optional(),
 				cursor: z.number().int().positive().optional(),
 				limit: z.number().int().min(1).max(100).default(50),
 			}),

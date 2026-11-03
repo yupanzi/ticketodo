@@ -1,4 +1,4 @@
-import { asc, count, eq, ilike, or, sql } from "drizzle-orm";
+import { asc, count, eq, ilike, inArray, or, sql } from "drizzle-orm";
 
 import { hasRealEmail } from "~/domain/identity";
 import { auditInTx } from "~/server/audit/record";
@@ -48,6 +48,24 @@ export async function searchUsers(
 		)
 		.orderBy(asc(user.name))
 		.limit(limit);
+	return rows.map(toOption);
+}
+
+export async function usersByIds(
+	db: Executor,
+	ids: string[],
+): Promise<UserOption[]> {
+	if (!ids.length) return [];
+	const rows = await db
+		.select({
+			id: user.id,
+			name: user.name,
+			image: user.image,
+			email: user.email,
+		})
+		.from(user)
+		.where(inArray(user.id, ids))
+		.orderBy(asc(user.name));
 	return rows.map(toOption);
 }
 

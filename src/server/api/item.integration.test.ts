@@ -6,7 +6,7 @@ import { addDays, todayInAppTz } from "~/domain/due";
 import { formatMention } from "~/domain/mention";
 import { auditLogs, notifications } from "~/server/db/schema";
 import { AUDIT_ACTIONS } from "~/server/resources";
-import { auditsFor, hasTestDb, testDb } from "~/test/db";
+import { auditsFor, hasTestDb, testDb, uniq } from "~/test/db";
 import { actor } from "~/test/trpc";
 
 type Actor = Awaited<ReturnType<typeof actor>>;
@@ -360,7 +360,7 @@ describe.skipIf(!hasTestDb)("item API", () => {
 				dueDate: "2999-01-01",
 			});
 			const codes = (
-				await reporter.api.item.list({ overdue: true, limit: 100 })
+				await reporter.api.item.list({ due: "overdue", limit: 100 })
 			).items.map((i) => i.code);
 			expect(codes).toContain(overdue);
 			expect(codes).not.toContain(future);
@@ -388,12 +388,165 @@ describe.skipIf(!hasTestDb)("item API", () => {
 				awaitingConfirmation: 1,
 				active: 3,
 			});
-			const listed = async (f: { overdue?: boolean; dueToday?: boolean }) =>
-				(await me.api.item.list({ ...f, assigneeId: me.user.id })).items.map(
+			const listed = async (due: "overdue" | "today") =>
+				(await me.api.item.list({ due, assigneeIds: [me.user.id] })).items.map(
 					(i) => i.code,
 				);
-			expect(await listed({ overdue: true })).toEqual([overdue]);
-			expect(await listed({ dueToday: true })).toHaveLength(1);
+			expect(await listed("overdue")).toEqual([overdue]);
+			expect(await listed("today")).toHaveLength(1);
+		});
+	});
+
+	describe("列表排序与翻页", () => {
+		let me: Actor;
+		const c = { p1Late: "", p0None: "", p1Soon: "", p0Today: "", p3Past: "" };
+		type ListInput = Parameters<Actor["api"]["item"]["list"]>[0];
+
+		/** 每页 2 条一路翻到底：验证 keyset 不漏不重 */
+		async function walk(input: ListInput = {}): Promise<string[]> {
+			const out: string[] = [];
+			let cursor: number | undefined;
+			do {
+				const page = await me.api.item.list({
+					...input,
+					assigneeIds: [me.user.id],
+					limit: 2,
+					cursor,
+				});
+				out.push(...page.items.map((i) => i.code));
+				cursor = page.nextCursor ?? undefined;
+			} while (cursor);
+			return out;
+		}
+
+		beforeAll(async () => {
+			me = await actor({ name: "排序" });
+			const today = todayInAppTz();
+			const t = (priority: string, dueDate?: string) =>
+				newTicket(reporter, me, { priority, dueDate });
+			c.p1Late = await t("P1", addDays(today, 5));
+			c.p0None = await t("P0");
+			c.p1Soon = await t("P1", addDays(today, 1));
+			c.p0Today = await t("P0", today);
+			c.p3Past = await t("P3", addDays(today, -3));
+		});
+
+		it("默认：优先级 → 期望完成，没设日期的排在同级最后", async () => {
+			expect(await walk()).toEqual([
+				c.p0Today,
+				c.p0None,
+				c.p1Soon,
+				c.p1Late,
+				c.p3Past,
+			]);
+		});
+
+		it("期望完成：升序、降序都把没设日期的放最后", async () => {
+			expect(await walk({ sort: { by: "due", dir: "asc" } })).toEqual([
+				c.p3Past,
+				c.p0Today,
+				c.p1Soon,
+				c.p1Late,
+				c.p0None,
+			]);
+			expect(await walk({ sort: { by: "due", dir: "desc" } })).toEqual([
+				c.p1Late,
+				c.p1Soon,
+				c.p0Today,
+				c.p3Past,
+				c.p0None,
+			]);
+		});
+
+		it("创建时间、更新时间", async () => {
+			expect(await walk({ sort: { by: "created", dir: "asc" } })).toEqual([
+				c.p1Late,
+				c.p0None,
+				c.p1Soon,
+				c.p0Today,
+				c.p3Past,
+			]);
+			await me.api.item.transition({ code: c.p1Late, to: "in_progress" });
+			const updated = await walk({ sort: { by: "updated", dir: "desc" } });
+			expect(updated[0]).toBe(c.p1Late);
+			expect(updated).toHaveLength(5);
+		});
+
+		it("游标是看不见的 todo：返回空页，不借翻页位置泄露它", async () => {
+			const { code } = await bystander.api.item.create({
+				type: "todo",
+				title: "私事",
+				priority: "P0",
+			});
+			const { item } = await bystander.api.item.byCode({ code });
+			const page = await reporter.api.item.list({ cursor: item.id });
+			expect(page).toEqual({ items: [], nextCursor: null });
+		});
+	});
+
+	describe("列表多选筛选", () => {
+		it("标签命中任一；负责人、提单人、类型都能多选", async () => {
+			const me = await actor({ name: "多选" });
+			const [a, b, c] = [uniq("甲"), uniq("乙"), uniq("丙")];
+			const ca = await newTicket(reporter, me, { tags: [a] });
+			const cb = await newTicket(other, me, { tags: [b] });
+			const cc = await newTicket(reporter, me, { tags: [c] });
+			const { code: todo } = await me.api.item.create({
+				type: "todo",
+				title: "自己的",
+				priority: "P3",
+			});
+			const tagId = async (code: string) =>
+				(await me.api.item.byCode({ code })).item.tags[0]?.id ?? 0;
+			const codes = async (input: ListInput) =>
+				(await me.api.item.list({ assigneeIds: [me.user.id], ...input })).items
+					.map((i) => i.code)
+					.sort();
+			type ListInput = Parameters<Actor["api"]["item"]["list"]>[0];
+
+			expect(
+				await codes({ tagIds: [await tagId(ca), await tagId(cb)] }),
+			).toEqual([ca, cb].sort());
+			expect(await codes({ reporterIds: [other.user.id, me.user.id] })).toEqual(
+				[cb, todo].sort(),
+			);
+			expect(await codes({ types: ["todo"] })).toEqual([todo]);
+			expect(await codes({ types: ["ticket", "todo"] })).toHaveLength(4);
+			expect(
+				(
+					await me.api.item.list({
+						assigneeIds: [me.user.id, assignee.user.id],
+					})
+				).items.map((i) => i.code),
+			).toContain(cc);
+		});
+
+		it("到期：快捷项只算进行中，自定义范围含两端、不限状态", async () => {
+			const me = await actor({ name: "到期" });
+			const today = todayInAppTz();
+			const t = (dueDate?: string) => newTicket(reporter, me, { dueDate });
+			const past = await t(addDays(today, -1));
+			const d0 = await t(today);
+			const d6 = await t(addDays(today, 6));
+			const d7 = await t(addDays(today, 7));
+			const none = await t();
+			const resolved = await t(today);
+			await me.api.item.transition({ code: resolved, to: "resolved" });
+			const codes = async (
+				due: Parameters<Actor["api"]["item"]["list"]>[0]["due"],
+			) =>
+				(await me.api.item.list({ assigneeIds: [me.user.id], due })).items
+					.map((i) => i.code)
+					.sort();
+
+			expect(await codes("overdue")).toEqual([past]);
+			expect(await codes("today")).toEqual([d0]);
+			expect(await codes("next7")).toEqual([d0, d6].sort());
+			expect(await codes("none")).toEqual([none]);
+			expect(await codes({ from: today, to: addDays(today, 6) })).toEqual(
+				[d0, d6, resolved].sort(),
+			);
+			expect(await codes({ from: addDays(today, 7) })).toEqual([d7]);
 		});
 	});
 

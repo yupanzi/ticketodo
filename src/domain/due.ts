@@ -25,6 +25,22 @@ export function addDays(day: string, n: number): string {
 	return d.toISOString().slice(0, 10);
 }
 
+/** 0 = 周日 … 6 = 周六（按 UTC 读，与运行环境时区无关） */
+export function weekdayOf(day: string): number {
+	return new Date(`${day}T00:00:00Z`).getUTCDay();
+}
+
+/** 严格晚于 `day` 的下一个周一：周一当天点「下周一」是 7 天后 */
+export function nextMonday(day: string): string {
+	return addDays(day, (8 - weekdayOf(day)) % 7 || 7);
+}
+
+export function endOfMonth(day: string): string {
+	const d = new Date(`${day.slice(0, 7)}-01T00:00:00Z`);
+	d.setUTCMonth(d.getUTCMonth() + 1, 0);
+	return d.toISOString().slice(0, 10);
+}
+
 export type DueState = "overdue" | "due_soon" | "normal";
 
 /**

@@ -7,14 +7,16 @@ import {
 	ilike,
 	inArray,
 	isNotNull,
+	isNull,
 	like,
 	lt,
+	lte,
 	not,
 	or,
 	type SQL,
 	sql,
 } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
+import { type AnyPgColumn, alias } from "drizzle-orm/pg-core";
 
 import type { AuditChanges } from "~/domain/audit";
 import { diffFields, hasChanges } from "~/domain/diff";
@@ -26,6 +28,12 @@ import {
 	STATUS_LABEL,
 } from "~/domain/item";
 import { parseItemCode } from "~/domain/item-code";
+import {
+	DEFAULT_SORT,
+	type DueFilter,
+	type ItemSort,
+	type SortDir,
+} from "~/domain/item-list";
 import { recipientsFor } from "~/domain/notify";
 import {
 	canAssign,
@@ -155,18 +163,106 @@ export async function getItem(
 const todaySql = sql`(now() AT TIME ZONE ${APP_TIMEZONE})::date`;
 
 export interface ListFilters {
-	type?: ItemType;
+	types?: ItemType[];
 	statuses?: ItemStatus[];
 	priorities?: Priority[];
-	assigneeId?: string;
-	reporterId?: string;
-	tagId?: number;
-	overdue?: boolean;
-	/** 期望完成日期是北京今天、仍在进行中 */
-	dueToday?: boolean;
+	assigneeIds?: string[];
+	reporterIds?: string[];
+	/** 命中任一标签 */
+	tagIds?: number[];
+	due?: DueFilter;
 	q?: string;
+	sort?: ItemSort;
+	/** 上一页最后一条的 id */
 	cursor?: number;
 	limit: number;
+}
+
+function dueWhere(due: DueFilter): SQL | undefined {
+	const active = inArray(items.status, [...ACTIVE_STATUSES]);
+	if (due === "overdue") return and(lt(items.dueDate, todaySql), active);
+	if (due === "today") return and(eq(items.dueDate, todaySql), active);
+	if (due === "next7")
+		return and(
+			gte(items.dueDate, todaySql),
+			sql`${items.dueDate} <= ${todaySql} + 6`,
+			active,
+		);
+	if (due === "none") return isNull(items.dueDate);
+	return and(
+		due.from ? gte(items.dueDate, due.from) : undefined,
+		due.to ? lte(items.dueDate, due.to) : undefined,
+	);
+}
+
+interface SortKey {
+	expr: SQL | AnyPgColumn;
+	dir: SortDir;
+}
+
+/**
+ * 排序键，末位总是 id：键值唯一，keyset 分页才不会在并列处漏行或重复。
+ * 没设期望完成的不论升降都排最后：升序当作 infinity，降序当作 -infinity。
+ */
+function sortKeys({ by, dir }: ItemSort): SortKey[] {
+	const due = (d: SortDir): SortKey => ({
+		expr: sql`coalesce(${items.dueDate}, ${d === "asc" ? "infinity" : "-infinity"}::date)`,
+		dir: d,
+	});
+	switch (by) {
+		case "priority":
+			return [
+				{ expr: items.priority, dir },
+				due("asc"),
+				{ expr: items.id, dir: "desc" },
+			];
+		case "due":
+			return [
+				due(dir),
+				{ expr: items.priority, dir: "asc" },
+				{ expr: items.id, dir: "desc" },
+			];
+		case "updated":
+			return [
+				{ expr: items.updatedAt, dir },
+				{ expr: items.id, dir },
+			];
+		case "created":
+			return [{ expr: items.id, dir }];
+	}
+}
+
+/**
+ * keyset：排在游标那一行之后的行。游标只是 id，排序值现查：updated_at 是微秒，经 JS Date 倒一手
+ * 会截成毫秒、漏行；取成 text 再当参数比较则原样。游标行看不见就当不存在（返回 null → 空页），
+ * 否则能借翻页位置推出别人 todo 的优先级与日期。
+ */
+async function afterCursor(
+	ctx: ServiceContext,
+	keys: SortKey[],
+	cursor: number,
+): Promise<SQL | null> {
+	const [row] = await ctx.db
+		.select(
+			Object.fromEntries(
+				keys.map((k, i) => [`k${i}`, sql<string>`(${k.expr})::text`]),
+			),
+		)
+		.from(items)
+		.where(and(eq(items.id, cursor), visibleItemsWhere(ctx.actor)));
+	if (!row) return null;
+	const values = keys.map((_, i) => row[`k${i}`]);
+	// (k0 ⋗ v0) OR (k0 = v0 AND k1 ⋗ v1) OR …，⋗ 按各键方向取 > 或 <
+	return or(
+		...keys.map((k, i) =>
+			and(
+				...keys.slice(0, i).map((p, j) => sql`${p.expr} = ${values[j]}`),
+				k.dir === "asc"
+					? sql`${k.expr} > ${values[i]}`
+					: sql`${k.expr} < ${values[i]}`,
+			),
+		),
+	) as SQL;
 }
 
 export async function listItems(
@@ -174,36 +270,24 @@ export async function listItems(
 	f: ListFilters,
 ): Promise<{ items: ItemView[]; nextCursor: number | null }> {
 	const conds: (SQL | undefined)[] = [visibleItemsWhere(ctx.actor)];
-	if (f.type) conds.push(eq(items.type, f.type));
+	if (f.types?.length) conds.push(inArray(items.type, f.types));
 	if (f.statuses?.length) conds.push(inArray(items.status, f.statuses));
 	if (f.priorities?.length) conds.push(inArray(items.priority, f.priorities));
-	if (f.assigneeId) conds.push(eq(items.assigneeId, f.assigneeId));
-	if (f.reporterId) conds.push(eq(items.reporterId, f.reporterId));
-	if (f.tagId)
+	if (f.assigneeIds?.length)
+		conds.push(inArray(items.assigneeId, f.assigneeIds));
+	if (f.reporterIds?.length)
+		conds.push(inArray(items.reporterId, f.reporterIds));
+	if (f.tagIds?.length)
 		conds.push(
 			inArray(
 				items.id,
 				ctx.db
 					.select({ id: itemTags.itemId })
 					.from(itemTags)
-					.where(eq(itemTags.tagId, f.tagId)),
+					.where(inArray(itemTags.tagId, f.tagIds)),
 			),
 		);
-	if (f.overdue)
-		conds.push(
-			and(
-				isNotNull(items.dueDate),
-				sql`${items.dueDate} < ${todaySql}`,
-				inArray(items.status, [...ACTIVE_STATUSES]),
-			),
-		);
-	if (f.dueToday)
-		conds.push(
-			and(
-				sql`${items.dueDate} = ${todaySql}`,
-				inArray(items.status, [...ACTIVE_STATUSES]),
-			),
-		);
+	if (f.due) conds.push(dueWhere(f.due));
 	const q = f.q?.trim();
 	if (q) {
 		// 单号精确找；标题模糊找（% 与 _ 当普通字符）
@@ -212,11 +296,16 @@ export async function listItems(
 			or(eq(items.code, q.toUpperCase()), ilike(items.title, `%${escaped}%`)),
 		);
 	}
-	if (f.cursor) conds.push(lt(items.id, f.cursor));
+	const keys = sortKeys(f.sort ?? DEFAULT_SORT);
+	if (f.cursor) {
+		const after = await afterCursor(ctx, keys, f.cursor);
+		if (!after) return { items: [], nextCursor: null };
+		conds.push(after);
+	}
 
 	const rows = await selectItems(ctx.db)
 		.where(and(...conds))
-		.orderBy(desc(items.id))
+		.orderBy(...keys.map((k) => (k.dir === "asc" ? asc(k.expr) : desc(k.expr))))
 		.limit(f.limit + 1);
 	const page = rows.slice(0, f.limit);
 	return {

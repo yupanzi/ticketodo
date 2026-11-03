@@ -5,6 +5,7 @@ import { Textarea } from "~/components/ui/textarea";
 import { DESCRIPTION_MAX_LENGTH, TITLE_MAX_LENGTH } from "~/domain/item";
 import type { Priority } from "~/domain/priority";
 
+import { DatePicker } from "./date-picker";
 import { Field } from "./layout";
 import { PriorityPicker } from "./priority-picker";
 import { TagInput } from "./tag-input";
@@ -52,10 +53,10 @@ export function ItemFields({
 			</Field>
 			<div className="grid gap-5 sm:grid-cols-2">
 				<Field htmlFor="item-due" label="期望完成日期">
-					<Input
+					<DatePicker
 						id="item-due"
-						onChange={(e) => set("dueDate", e.target.value)}
-						type="date"
+						onChange={(d) => set("dueDate", d)}
+						placeholder="不设"
 						value={value.dueDate}
 					/>
 				</Field>

@@ -24,10 +24,11 @@ import {
 import { formatDateTime } from "~/lib/format";
 import { useTRPC } from "~/trpc/react";
 
+import { DateRangePicker, type DayRange } from "./date-picker";
 import { PageHeader, Panel } from "./layout";
 
 /** 起止日期按北京时间的整天算 */
-function dayBound(day: string, end: boolean): Date | undefined {
+function dayBound(day: string | undefined, end: boolean): Date | undefined {
 	if (!day) return undefined;
 	return new Date(`${day}T${end ? "23:59:59.999" : "00:00:00"}+08:00`);
 }
@@ -37,8 +38,7 @@ export function AdminAudit() {
 	const [action, setAction] = useState("");
 	const [target, setTarget] = useState("");
 	const [status, setStatus] = useState<"any" | "success" | "failure">("any");
-	const [from, setFrom] = useState("");
-	const [to, setTo] = useState("");
+	const [range, setRange] = useState<DayRange>({});
 	const deferredAction = useDeferredValue(action);
 	const deferredTarget = useDeferredValue(target);
 	const [open, setOpen] = useState<number | null>(null);
@@ -49,8 +49,8 @@ export function AdminAudit() {
 				action: deferredAction.trim() || undefined,
 				target: deferredTarget.trim() || undefined,
 				status: status === "any" ? undefined : status,
-				from: dayBound(from, false),
-				to: dayBound(to, true),
+				from: dayBound(range.from, false),
+				to: dayBound(range.to, true),
 				limit: 50,
 			},
 			{ getNextPageParam: (last) => last.nextCursor ?? undefined },
@@ -97,24 +97,11 @@ export function AdminAudit() {
 							<SelectItem value="failure">失败</SelectItem>
 						</SelectContent>
 					</Select>
-					<Input
-						aria-label="起始日期"
-						autoComplete="off"
-						className="w-40"
-						name="from"
-						onChange={(e) => setFrom(e.target.value)}
-						type="date"
-						value={from}
-					/>
-					<span className="text-muted-foreground text-sm">至</span>
-					<Input
-						aria-label="截止日期"
-						autoComplete="off"
-						className="w-40"
-						name="to"
-						onChange={(e) => setTo(e.target.value)}
-						type="date"
-						value={to}
+					<DateRangePicker
+						aria-label="日期范围"
+						className="w-64"
+						onChange={setRange}
+						value={range}
 					/>
 				</div>
 				<div>

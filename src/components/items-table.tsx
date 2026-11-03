@@ -1,21 +1,20 @@
 "use client";
 
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { Inbox, Search, X } from "lucide-react";
+import {
+	ArrowDown,
+	ArrowUp,
+	ChevronsUpDown,
+	Inbox,
+	Search,
+	X,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useDeferredValue, useEffect, useState } from "react";
 
 import { Button } from "~/components/ui/button";
-import { Checkbox } from "~/components/ui/checkbox";
 import { Input } from "~/components/ui/input";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "~/components/ui/select";
 import {
 	Table,
 	TableBody,
@@ -25,65 +24,100 @@ import {
 	TableRow,
 } from "~/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "~/components/ui/tabs";
-import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
 import { todayInAppTz } from "~/domain/due";
 import {
 	ITEM_STATUSES,
-	type ItemStatus,
-	type ItemType,
+	ITEM_TYPES,
 	STATUS_LABEL,
+	TYPE_LABEL,
 } from "~/domain/item";
-import { PRIORITIES, type Priority } from "~/domain/priority";
-import { formatRelative } from "~/lib/format";
+import {
+	type ItemSort,
+	type ItemSortBy,
+	NATURAL_DIR,
+	type SortDir,
+} from "~/domain/item-list";
+import { PRIORITIES, PRIORITY_META } from "~/domain/priority";
+import { formatDateTime, formatRelative } from "~/lib/format";
+import {
+	DEFAULT_FILTERS,
+	hasActiveFilters,
+	type ListFilterState,
+	toSearch,
+} from "~/lib/item-filters";
+import { cn } from "~/lib/utils";
 import { useTRPC } from "~/trpc/react";
 
 import {
 	DueBadge,
 	PriorityBadge,
 	StatusBadge,
+	StatusDot,
 	TagBadge,
 	TodoBadge,
 } from "./badges";
-import { Chip } from "./chip";
 import { EmptyState, PageHeader, Panel } from "./layout";
+import { DueFacet, FacetedFilter, PeopleFacet } from "./list-filters";
 import { useMe } from "./me-context";
 import { UserChip } from "./user-avatar";
 
-export type Mine = "all" | "assigned" | "reported";
+type Mine = "all" | "assigned" | "reported";
 
-/** 列表的筛选：与地址栏双向同步，首页概览的卡片就是带着它跳过来的 */
-export interface ListFilterState {
-	mine: Mine;
-	type: ItemType | "any";
-	statuses: ItemStatus[];
-	priorities: Priority[];
-	tagId: string;
-	overdue: boolean;
-	dueToday: boolean;
-	q: string;
+const SORT_HINT: Record<ItemSortBy, Record<SortDir, string>> = {
+	priority: { asc: "P0 在前", desc: "P3 在前" },
+	due: { asc: "近的在前", desc: "远的在前" },
+	created: { asc: "旧单在前", desc: "新单在前" },
+	updated: { asc: "久未更新的在前", desc: "刚更新的在前" },
+};
+
+/** 可排序的表头：第一下按该列的自然方向，再点反过来 */
+function SortHead({
+	by,
+	label,
+	sort,
+	onSort,
+	className,
+}: {
+	by: ItemSortBy;
+	label: string;
+	sort: ItemSort;
+	onSort: (s: ItemSort) => void;
+	className?: string;
+}) {
+	const active = sort.by === by;
+	const next: ItemSort = active
+		? { by, dir: sort.dir === "asc" ? "desc" : "asc" }
+		: { by, dir: NATURAL_DIR[by] };
+	const Icon = !active
+		? ChevronsUpDown
+		: sort.dir === "asc"
+			? ArrowUp
+			: ArrowDown;
+	return (
+		<TableHead
+			aria-sort={
+				active ? (sort.dir === "asc" ? "ascending" : "descending") : undefined
+			}
+			className={className}
+		>
+			<button
+				className={cn(
+					"-mx-2 inline-flex h-8 items-center gap-1 rounded-md px-2 outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+					active && "text-foreground",
+				)}
+				onClick={() => onSort(next)}
+				title={`${active ? `当前「${SORT_HINT[by][sort.dir]}」，` : ""}点击改为「${SORT_HINT[by][next.dir]}」`}
+				type="button"
+			>
+				{label}
+				<Icon className={cn("size-3.5", !active && "opacity-40")} />
+			</button>
+		</TableHead>
+	);
 }
 
-/** 不看已关闭的：日常看的是还要做的事 */
-export const DEFAULT_STATUSES: ItemStatus[] = [
-	"open",
-	"in_progress",
-	"resolved",
-];
-
-function toSearch(f: ListFilterState): string {
-	const p = new URLSearchParams();
-	if (f.mine !== "all") p.set("mine", f.mine);
-	if (f.type !== "any") p.set("type", f.type);
-	if (f.statuses.join() !== DEFAULT_STATUSES.join())
-		p.set("status", f.statuses.join(","));
-	if (f.priorities.length) p.set("priority", f.priorities.join(","));
-	if (f.tagId !== "any") p.set("tag", f.tagId);
-	if (f.overdue) p.set("overdue", "1");
-	if (f.dueToday) p.set("due", "today");
-	if (f.q.trim()) p.set("q", f.q.trim());
-	const s = p.toString();
-	return s ? `?${s}` : "";
-}
+const sameIds = (a: string[], b: string[]) =>
+	a.length === b.length && a.every((x) => b.includes(x));
 
 export function ItemsTable({ initial }: { initial: ListFilterState }) {
 	const trpc = useTRPC();
@@ -103,18 +137,34 @@ export function ItemsTable({ initial }: { initial: ListFilterState }) {
 		});
 	}, [f, deferredQ, pathname, router]);
 
+	// 「我负责的 / 我提的」是人员筛选的快捷方式：选了别人时三个都不亮
+	const mine: Mine | "" =
+		!f.assigneeIds.length && !f.reporterIds.length
+			? "all"
+			: sameIds(f.assigneeIds, [me.id]) && !f.reporterIds.length
+				? "assigned"
+				: sameIds(f.reporterIds, [me.id]) && !f.assigneeIds.length
+					? "reported"
+					: "";
+	const setMine = (m: Mine) =>
+		setF((prev) => ({
+			...prev,
+			assigneeIds: m === "assigned" ? [me.id] : [],
+			reporterIds: m === "reported" ? [me.id] : [],
+		}));
+
 	const list = useInfiniteQuery(
 		trpc.item.list.infiniteQueryOptions(
 			{
-				type: f.type === "any" ? undefined : f.type,
-				statuses: f.statuses.length ? f.statuses : undefined,
-				priorities: f.priorities.length ? f.priorities : undefined,
-				assigneeId: f.mine === "assigned" ? me.id : undefined,
-				reporterId: f.mine === "reported" ? me.id : undefined,
-				tagId: f.tagId === "any" ? undefined : Number(f.tagId),
-				overdue: f.overdue || undefined,
-				dueToday: f.dueToday || undefined,
+				types: f.types,
+				statuses: f.statuses,
+				priorities: f.priorities,
+				tagIds: f.tagIds,
+				assigneeIds: f.assigneeIds,
+				reporterIds: f.reporterIds,
+				due: f.due ?? undefined,
 				q: deferredQ.trim() || undefined,
+				sort: f.sort,
 				limit: 50,
 			},
 			{ getNextPageParam: (last) => last.nextCursor ?? undefined },
@@ -122,12 +172,13 @@ export function ItemsTable({ initial }: { initial: ListFilterState }) {
 	);
 	const rows = list.data?.pages.flatMap((p) => p.items) ?? [];
 	const today = todayInAppTz();
+	const sortProps = { sort: f.sort, onSort: (s: ItemSort) => set("sort", s) };
 
 	return (
 		<>
 			<PageHeader
 				actions={
-					<Tabs onValueChange={(v) => set("mine", v as Mine)} value={f.mine}>
+					<Tabs onValueChange={(v) => setMine(v as Mine)} value={mine}>
 						<TabsList>
 							<TabsTrigger value="all">全部</TabsTrigger>
 							<TabsTrigger value="assigned">我负责的</TabsTrigger>
@@ -139,117 +190,107 @@ export function ItemsTable({ initial }: { initial: ListFilterState }) {
 				title="全部单子"
 			/>
 			<Panel flush>
-				<div className="flex flex-col gap-4 border-b px-5 py-4">
-					<div className="flex flex-wrap items-center gap-3">
-						<div className="relative w-72">
-							<Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-							<Input
-								aria-label="搜索单号或标题"
-								autoComplete="off"
-								className="pl-9"
-								name="q"
-								onChange={(e) => set("q", e.target.value)}
-								placeholder="搜索单号或标题"
-								value={f.q}
-							/>
-						</div>
-						<Select
-							onValueChange={(v) => set("type", v as ItemType | "any")}
-							value={f.type}
-						>
-							<SelectTrigger aria-label="类型" className="w-32">
-								<SelectValue />
-							</SelectTrigger>
-							<SelectContent>
-								<SelectItem value="any">全部类型</SelectItem>
-								<SelectItem value="ticket">Ticket</SelectItem>
-								<SelectItem value="todo">Todo</SelectItem>
-							</SelectContent>
-						</Select>
-						<Select onValueChange={(v) => set("tagId", v)} value={f.tagId}>
-							<SelectTrigger aria-label="标签" className="w-36">
-								<SelectValue />
-							</SelectTrigger>
-							<SelectContent>
-								<SelectItem value="any">全部标签</SelectItem>
-								{tags.map((t) => (
-									<SelectItem key={t.id} value={String(t.id)}>
-										# {t.name}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-						<label
-							className="flex items-center gap-2 text-sm"
-							htmlFor="only-overdue"
-						>
-							<Checkbox
-								checked={f.overdue}
-								id="only-overdue"
-								onCheckedChange={(v) => set("overdue", v === true)}
-							/>
-							只看逾期
-						</label>
-						{f.dueToday && (
-							<Chip tone="amber-soft">
-								今天到期
-								<button
-									aria-label="去掉「今天到期」筛选"
-									onClick={() => set("dueToday", false)}
-									type="button"
-								>
-									<X />
-								</button>
-							</Chip>
-						)}
+				<div className="flex flex-wrap items-center gap-2 border-b px-5 py-4">
+					<div className="relative w-64">
+						<Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+						<Input
+							aria-label="搜索单号或标题"
+							autoComplete="off"
+							className="pl-9"
+							name="q"
+							onChange={(e) => set("q", e.target.value)}
+							placeholder="搜索单号或标题"
+							value={f.q}
+						/>
 					</div>
-					<div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-						<div className="flex items-center gap-2">
-							<span className="text-muted-foreground text-sm">状态</span>
-							<ToggleGroup
-								aria-label="状态"
-								onValueChange={(v) => set("statuses", v as ItemStatus[])}
-								spacing={1}
-								type="multiple"
-								value={f.statuses}
-								variant="outline"
-							>
-								{ITEM_STATUSES.map((s) => (
-									<ToggleGroupItem key={s} value={s}>
-										{STATUS_LABEL[s]}
-									</ToggleGroupItem>
-								))}
-							</ToggleGroup>
-						</div>
-						<div className="flex items-center gap-2">
-							<span className="text-muted-foreground text-sm">优先级</span>
-							<ToggleGroup
-								aria-label="优先级"
-								onValueChange={(v) => set("priorities", v as Priority[])}
-								spacing={1}
-								type="multiple"
-								value={f.priorities}
-								variant="outline"
-							>
-								{PRIORITIES.map((p) => (
-									<ToggleGroupItem className="font-mono" key={p} value={p}>
-										{p}
-									</ToggleGroupItem>
-								))}
-							</ToggleGroup>
-						</div>
-					</div>
+					<FacetedFilter
+						onChange={(v) => set("types", v)}
+						options={ITEM_TYPES.map((t) => ({
+							value: t,
+							label: TYPE_LABEL[t],
+						}))}
+						selected={f.types}
+						title="类型"
+					/>
+					<FacetedFilter
+						onChange={(v) => set("statuses", v)}
+						options={ITEM_STATUSES.map((s) => ({
+							value: s,
+							label: STATUS_LABEL[s],
+							icon: <StatusDot status={s} />,
+						}))}
+						selected={f.statuses}
+						title="状态"
+					/>
+					<FacetedFilter
+						onChange={(v) => set("priorities", v)}
+						options={PRIORITIES.map((p) => ({
+							value: p,
+							label: p,
+							hint: PRIORITY_META[p].label,
+						}))}
+						selected={f.priorities}
+						title="优先级"
+					/>
+					<FacetedFilter
+						onChange={(v) => set("tagIds", v)}
+						options={tags.map((t) => ({ value: t.id, label: t.name }))}
+						selected={f.tagIds}
+						title="标签"
+					/>
+					<PeopleFacet
+						onChange={(v) => set("assigneeIds", v)}
+						selected={f.assigneeIds}
+						title="负责人"
+					/>
+					<PeopleFacet
+						onChange={(v) => set("reporterIds", v)}
+						selected={f.reporterIds}
+						title="提单人"
+					/>
+					<DueFacet onChange={(v) => set("due", v)} value={f.due} />
+					{hasActiveFilters(f) && (
+						<Button
+							onClick={() => setF({ ...DEFAULT_FILTERS, sort: f.sort })}
+							variant="ghost"
+						>
+							重置
+							<X />
+						</Button>
+					)}
 				</div>
 				<Table>
 					<TableHeader className="bg-muted/40">
 						<TableRow>
-							<TableHead>标题</TableHead>
-							<TableHead className="w-20">优先级</TableHead>
+							{/* 单号就是「TK-创建日期-序号」，按单号排即按创建排，不另设创建列。标题列吃剩余宽度，
+							    窄屏宁可横向滚动也不把标题挤没 */}
+							<SortHead
+								by="created"
+								className="min-w-64"
+								label="标题 / 单号"
+								{...sortProps}
+							/>
+							<SortHead
+								by="priority"
+								className="w-24"
+								label="优先级"
+								{...sortProps}
+							/>
 							<TableHead className="w-24">状态</TableHead>
-							<TableHead className="w-36">负责人</TableHead>
-							<TableHead className="w-36">提单人</TableHead>
-							<TableHead className="w-32">期望完成</TableHead>
-							<TableHead className="w-28">更新</TableHead>
+							<TableHead className="w-32">负责人</TableHead>
+							<TableHead className="w-32">提单人</TableHead>
+							<SortHead
+								by="due"
+								className="w-32"
+								label="期望完成"
+								{...sortProps}
+							/>
+							<SortHead
+								by="updated"
+								className="w-24"
+								label="更新"
+								{...sortProps}
+							/>
 						</TableRow>
 					</TableHeader>
 					<TableBody>
@@ -291,7 +332,10 @@ export function ItemsTable({ initial }: { initial: ListFilterState }) {
 										today={today}
 									/>
 								</TableCell>
-								<TableCell className="text-muted-foreground text-xs">
+								<TableCell
+									className="text-muted-foreground text-xs"
+									title={formatDateTime(i.updatedAt)}
+								>
 									{formatRelative(i.updatedAt)}
 								</TableCell>
 							</TableRow>
