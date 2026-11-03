@@ -1,10 +1,12 @@
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 import { MENTION_SCHEME } from "~/domain/mention";
 import { cn } from "~/lib/utils";
 
 /**
- * 描述与评论的渲染。⚠️ 不开 raw HTML（不加 rehype-raw）：正文是用户写的。
+ * 描述与评论的渲染：GFM（任务清单、表格、删除线、自动链接）。⚠️ 不开 raw HTML（不加 rehype-raw）：
+ * 正文是用户写的。
  * `@[名字](user:<id>)` 渲染成提及；其余链接新窗口打开。
  */
 export function Markdown({
@@ -29,6 +31,7 @@ export function Markdown({
 				"[&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-3 [&_pre_code]:bg-transparent [&_pre_code]:p-0",
 				"[&_blockquote]:border-l-2 [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground",
 				"[&_table]:my-2 [&_td]:border [&_td]:px-2 [&_th]:border [&_th]:px-2",
+				"[&_.contains-task-list]:list-none [&_.contains-task-list]:pl-1 [&_.task-list-item_input]:mr-1.5 [&_del]:text-muted-foreground",
 				className,
 			)}
 		>
@@ -50,6 +53,7 @@ export function Markdown({
 							</a>
 						),
 				}}
+				remarkPlugins={[remarkGfm]}
 				urlTransform={(url) =>
 					url.startsWith(MENTION_SCHEME) ? url : defaultUrlTransform(url)
 				}

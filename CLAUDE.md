@@ -53,6 +53,9 @@ charts/ticketodo/    Helm：Deployment + Service + Ingress + migrate hook + Cron
 - **`requireIdTokenVerification: true` 别关**：authentik 没选签名密钥时宁可登录不了，也不能不验签。
 - discovery 拉取失败时 better-auth 把 provider 记为待发现，下次点登录自动重试：**别自己再加重试**。
 - **种子管理员只在系统内无管理员时生效**，授予与审计同一事务，与授予 / 撤销共用 advisory lock。
+- **OAuth token 一个都不落库**（`hooks.ts` 的 account before hook 置空）：本应用不调 authentik 的 API、
+  不做 provider 登出。⚠️ 别以为 `encryptOAuthTokens` 够了：它只加密 access / refresh token，id_token
+  照样明文落库。
 - **不开 `session.cookieCache`**：开了撤销管理员要等缓存过期。
 - **cookie 前缀 `ticketodo`**（`resources.ts`），`proxy.ts` 判断会话 cookie 读同一个值。
 - ⚠️ **better-auth 的配置只在 `authOptions` 里**：`getAuth` 与 `cli.ts` 共用；模块顶层别建实例。
@@ -97,12 +100,14 @@ charts/ticketodo/    Helm：Deployment + Service + Ingress + migrate hook + Cron
 
 - **全进程一个 pino 根 logger**，Error 只放 `err` 键；别用 `console.*`。better-auth 的日志也接到它。
 - **tRPC 500 只回「服务器内部错误 + 请求 id」**（`errorFormatter`）：原始 message 可能带 SQL。
-- `next dev` 的请求日志忽略 `/api/auth/`（回调 URL 带 OAuth code）；生产不逐请求打日志。
+- `next dev` 的请求日志关掉（`logging.incomingRequests: false`）：回调 URL 带 OAuth code；生产不逐请求
+  打日志。⚠️ 别改成 `{ ignore: [正则] }`：Next 16.4 下开发页面会无限重载。
 - `x-request-id` 只在信任代理时沿用来件的（`request.ts`），否则新生成。
 
 ### 通知
 
 - 收件人规则在 `domain/notify.ts`：不通知操作者，一人一条；todo 只会通知到所有者。
+- Markdown 渲染是 GFM（`remark-gfm`），不开 raw HTML。
 - **@ 由服务端从正文解析**，只认库里存在且看得见这张单的人；编辑只通知新加的 @。
 - 到期提醒去重靠**部分**唯一索引（`dedupe_key IS NOT NULL`），`ON CONFLICT` 要带同样的谓词。
   ⚠️ 别改成 `NULLS NOT DISTINCT`：会把评论、状态通知也去重掉。
