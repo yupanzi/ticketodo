@@ -1,0 +1,33 @@
+# dependencies
+/node_modules
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+next-env.d.ts
+
+# tsup 产物：bin 入口（biome 也靠这一条跳过它）
+/dist/
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+.pnpm-debug.log*
+
+# 本地 env（只有 .env.example 入库）
+.env
+.env*.local
+# .env 的本地备份（含真实凭证）
+.env.bak-*
+
+# typescript
+*.tsbuildinfo
+
+# idea files
+.idea

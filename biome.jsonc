@@ -1,0 +1,43 @@
+{
+	"$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+	"root": true,
+	"vcs": {
+		"enabled": true,
+		"useIgnoreFile": true,
+		"clientKind": "git"
+	},
+	"files": {
+		"ignoreUnknown": true,
+		// components/ui 是 shadcn 生成的，改了下次 `shadcn add` 会覆盖；drizzle/meta 是 drizzle-kit 产物
+		"includes": ["**", "!src/components/ui", "!drizzle/meta", "!next-env.d.ts"]
+	},
+	"assist": {
+		"enabled": true,
+		"actions": {
+			"preset": "recommended",
+			"source": {
+				"preset": "recommended",
+				"organizeImports": "on",
+				"useSortedAttributes": "on"
+			}
+		}
+	},
+	"formatter": {
+		"enabled": true
+	},
+	"css": {
+		"parser": {
+			"tailwindDirectives": true
+		}
+	},
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"preset": "recommended"
+		},
+		"domains": {
+			"next": "recommended",
+			"react": "recommended"
+		}
+	}
+}

@@ -1,0 +1,40 @@
+{
+	"$schema": "https://json.schemastore.org/tsconfig",
+	// 只用行注释：路径通配里的星号加斜杠会提前终止块注释。
+	"compilerOptions": {
+		"target": "ES2023",
+		"lib": ["dom", "dom.iterable", "ES2023"],
+		"allowJs": true,
+		"skipLibCheck": true,
+		"noEmit": true,
+		"esModuleInterop": true,
+		"module": "esnext",
+		"moduleResolution": "bundler",
+		"resolveJsonModule": true,
+		"isolatedModules": true,
+		// 类型 import 必须写 `import type`：混写 `import { type X }` 会把服务端模块拖进客户端 bundle
+		"verbatimModuleSyntax": true,
+		"moduleDetection": "force",
+		"jsx": "react-jsx",
+		"incremental": true,
+
+		"strict": true,
+		"noUncheckedIndexedAccess": true,
+		"noImplicitOverride": true,
+		"noFallthroughCasesInSwitch": true,
+
+		"plugins": [{ "name": "next" }],
+		"paths": {
+			"~/*": ["./src/*"]
+		}
+	},
+	"include": [
+		"next-env.d.ts",
+		"**/*.ts",
+		"**/*.tsx",
+		".next/types/**/*.ts",
+		".next/dev/types/**/*.ts",
+		"**/*.mts"
+	],
+	"exclude": ["node_modules", "dist"]
+}

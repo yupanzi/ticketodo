@@ -1,0 +1,27 @@
+# 单包仓库，这个文件只是 pnpm 的配置载体（package.json 的 pnpm 字段不读）。
+# ⚠️ allowBuilds 删不得：pnpm 对没表态的构建脚本让 install 返回非零，CI、Dockerfile 与本地都会失败。
+# esbuild 给 tsup / tsx / vitest 用；sharp 不需要（next.config 关了图片优化）。
+# ⚠️ 只写 pnpm 认识的键：packageManager 钉了版本，写错一个键 install 就失败。
+allowBuilds:
+  esbuild: true
+  sharp: false
+  unrs-resolver: false
+minimumReleaseAgeExclude:
+  - "@next/env@16.4.4"
+  - "@next/swc-darwin-arm64@16.4.4"
+  - "@next/swc-darwin-x64@16.4.4"
+  - "@next/swc-linux-arm64-gnu@16.4.4"
+  - "@next/swc-linux-arm64-musl@16.4.4"
+  - "@next/swc-linux-x64-gnu@16.4.4"
+  - "@next/swc-linux-x64-musl@16.4.4"
+  - "@next/swc-win32-arm64-msvc@16.4.4"
+  - "@next/swc-win32-x64-msvc@16.4.4"
+  - "@tanstack/query-core@5.105.3"
+  - "@tanstack/react-query@5.105.3"
+  - "@trpc/client@11.23.0"
+  - "@trpc/server@11.23.0"
+  - "@trpc/tanstack-react-query@11.23.0"
+  - next@16.4.4
+  - "@vitest/mocker@5.1.0"
+  - "@vitest/spy@5.1.0"
+  - vitest@5.1.0
