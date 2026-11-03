@@ -34,13 +34,19 @@ export async function createUser(
 	return row;
 }
 
-export async function auditsFor(targetId: string, actions?: string[]) {
+/** 条目、标签都是从 1 起的整数 id，只按 target_id 查会串：要带上 target_type */
+export async function auditsFor(
+	targetType: "item" | "user" | "comment" | "tag",
+	targetId: string | number,
+	actions?: string[],
+) {
 	return testDb()
 		.select()
 		.from(auditLogs)
 		.where(
 			and(
-				eq(auditLogs.targetId, targetId),
+				eq(auditLogs.targetType, targetType),
+				eq(auditLogs.targetId, String(targetId)),
 				actions ? inArray(auditLogs.action, actions) : undefined,
 			),
 		)

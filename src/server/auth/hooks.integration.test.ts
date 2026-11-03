@@ -52,7 +52,7 @@ describe.skipIf(!hasTestDb)("登录类 hook", () => {
 		});
 		await adapter.createSession(created.id);
 
-		const rows = await auditsFor(created.id);
+		const rows = await auditsFor("user", created.id);
 		expect(rows.map((r) => r.action)).toEqual([
 			AUDIT_ACTIONS.userCreate,
 			AUDIT_ACTIONS.authSignIn,
@@ -77,7 +77,9 @@ describe.skipIf(!hasTestDb)("登录类 hook", () => {
 		const a = await signUp(adapter, { name: "甲", email: first });
 		await adapter.createSession(a.id);
 		expect(await roleOf(a.id)).toBe("admin");
-		const [bootstrap] = await auditsFor(a.id, [AUDIT_ACTIONS.adminBootstrap]);
+		const [bootstrap] = await auditsFor("user", a.id, [
+			AUDIT_ACTIONS.adminBootstrap,
+		]);
 		expect(bootstrap?.actorType).toBe("system");
 		expect(bootstrap?.details?.changes?.role).toEqual({
 			from: "member",
@@ -88,13 +90,15 @@ describe.skipIf(!hasTestDb)("登录类 hook", () => {
 		const b = await signUp(adapter, { name: "乙", email: second });
 		await adapter.createSession(b.id);
 		expect(await roleOf(b.id)).toBe("member");
-		expect(await auditsFor(b.id, [AUDIT_ACTIONS.adminBootstrap])).toEqual([]);
+		expect(
+			await auditsFor("user", b.id, [AUDIT_ACTIONS.adminBootstrap]),
+		).toEqual([]);
 
 		// 同一人再次登录：不重复记
 		await adapter.createSession(a.id);
-		expect(await auditsFor(a.id, [AUDIT_ACTIONS.adminBootstrap])).toHaveLength(
-			1,
-		);
+		expect(
+			await auditsFor("user", a.id, [AUDIT_ACTIONS.adminBootstrap]),
+		).toHaveLength(1);
 	});
 
 	it("不在名单里的人登录不会被提升", async () => {
