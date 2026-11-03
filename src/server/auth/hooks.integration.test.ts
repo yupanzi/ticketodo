@@ -2,7 +2,7 @@ import { betterAuth } from "better-auth";
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
-import { user } from "~/server/db/schema";
+import { account, user } from "~/server/db/schema";
 import { parseEnv, serverEnvSchema } from "~/server/env";
 import { AUDIT_ACTIONS } from "~/server/resources";
 import { auditsFor, hasTestDb, testDb, uniq } from "~/test/db";
@@ -99,6 +99,35 @@ describe.skipIf(!hasTestDb)("登录类 hook", () => {
 		expect(
 			await auditsFor("user", a.id, [AUDIT_ACTIONS.adminBootstrap]),
 		).toHaveLength(1);
+	});
+
+	it("OAuth token 一个都不落库（建档与每次登录更新都一样）", async () => {
+		const adapter = await authWith();
+		const u = await signUp(adapter, {
+			name: "丁",
+			email: `${uniq("d")}@corp.test`,
+		});
+		const tokens = {
+			accessToken: "access-token-value",
+			refreshToken: "refresh-token-value",
+			idToken: "eyJhbGciOiJSUzI1NiJ9.payload.sig",
+		};
+		const created = await adapter.createAccount({
+			userId: u.id,
+			providerId: AUTH_PROVIDER_ID,
+			accountId: uniq("sub"),
+			...tokens,
+		});
+		await adapter.updateAccount(created.id, tokens);
+		const [row] = await testDb()
+			.select({
+				a: account.accessToken,
+				r: account.refreshToken,
+				i: account.idToken,
+			})
+			.from(account)
+			.where(eq(account.id, created.id));
+		expect(row).toEqual({ a: null, r: null, i: null });
 	});
 
 	it("不在名单里的人登录不会被提升", async () => {

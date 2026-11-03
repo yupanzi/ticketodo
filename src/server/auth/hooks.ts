@@ -24,6 +24,8 @@ import { ADVISORY_LOCKS, AUDIT_ACTIONS } from "~/server/resources";
 
 type IpOptions = Pick<BetterAuthOptions, "advanced">;
 
+const NO_TOKENS = { accessToken: null, refreshToken: null, idToken: null };
+
 function sourceOf(ctx: GenericEndpointContext | null): AuditSource {
 	const request = ctx?.request;
 	return {
@@ -93,6 +95,16 @@ export function authHooks(
 ): Pick<BetterAuthOptions, "databaseHooks" | "hooks"> {
 	return {
 		databaseHooks: {
+			// 本应用不调 authentik 的任何 API、也不做 provider 登出：OAuth token 一个都不存。
+			// ⚠️ 别指望 encryptOAuthTokens：它只加密 access / refresh token，id_token 照样明文落库
+			account: {
+				create: {
+					before: async (account) => ({ data: { ...account, ...NO_TOKENS } }),
+				},
+				update: {
+					before: async (account) => ({ data: { ...account, ...NO_TOKENS } }),
+				},
+			},
 			user: {
 				create: {
 					after: async (created, ctx) => {
