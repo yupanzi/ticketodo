@@ -24,7 +24,7 @@
 		"db:migrate": "drizzle-kit migrate",
 		"db:studio": "drizzle-kit studio",
 		"migrate": "tsx --env-file-if-exists=.env src/bin/migrate.ts",
-		"due-remind": "tsx --env-file-if-exists=.env src/bin/cron/due-remind.ts",
+		"dueremind": "tsx --env-file-if-exists=.env src/bin/cron/dueremind.ts",
 		"release:dry": "semantic-release --dry-run --no-ci",
 		"prepare": "husky || true"
 	},

@@ -1,0 +1,13 @@
+.git
+.github
+.husky
+node_modules
+.next
+dist
+.env
+.env*.local
+.env.bak-*
+coverage
+*.tsbuildinfo
+charts
+*.md

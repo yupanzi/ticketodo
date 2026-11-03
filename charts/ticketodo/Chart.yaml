@@ -1,0 +1,6 @@
+apiVersion: v2
+name: ticketodo
+description: 企业内部 ticket 与 todo（重要 × 紧急四象限），authentik 登录，带管理员与审计
+type: application
+version: 0.0.0
+appVersion: "0.0.0"

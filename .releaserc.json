@@ -1,0 +1,30 @@
+{
+	"branches": ["master"],
+	"plugins": [
+		["@semantic-release/commit-analyzer", { "preset": "conventionalcommits" }],
+		[
+			"@semantic-release/release-notes-generator",
+			{ "preset": "conventionalcommits" }
+		],
+		["@semantic-release/changelog", { "changelogFile": "CHANGELOG.md" }],
+		[
+			"@semantic-release/exec",
+			{
+				"prepareCmd": "node scripts/release-version.mjs ${nextRelease.version} && pnpm exec biome format --write package.json",
+				"publishCmd": "docker buildx build -t \"$IMAGE:${nextRelease.version}\" -t \"$IMAGE:latest\" --push . && helm package charts/ticketodo && helm push ticketodo-${nextRelease.version}.tgz \"oci://$CHART_REPO\""
+			}
+		],
+		[
+			"@semantic-release/git",
+			{
+				"assets": [
+					"CHANGELOG.md",
+					"package.json",
+					"charts/ticketodo/Chart.yaml"
+				],
+				"message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
+			}
+		],
+		"@semantic-release/github"
+	]
+}

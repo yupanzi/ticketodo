@@ -39,5 +39,6 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-	matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+	// 静态资源与 public/ 下的文件不经过它：否则 robots.txt 也被重定向到登录页
+	matcher: ["/((?!_next/static|_next/image|favicon.ico|robots.txt).*)"],
 };

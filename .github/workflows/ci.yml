@@ -1,0 +1,130 @@
+# check：lint + 类型 + 测试（含需要真实 Postgres 的集成测试）+ 无 env 构建 + chart lint。
+# build：只在 PR 上验证镜像能构建，不推。
+# release：push 到默认分支、check 过了才跑，版本号、镜像与 chart 都由它出。deploy 不进 CI（不放集群凭证）。
+name: ci
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+# 默认分支不取消：release 半路被抢占会留下「tag 已打、镜像未推」
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_name != github.event.repository.default_branch }}
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ticketodo
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:ci@localhost:5432/ticketodo
+      # CI 的库用完即弃，集成测试直接用它
+      TEST_DATABASE_URL: postgresql://postgres:ci@localhost:5432/ticketodo
+    steps:
+      - uses: actions/checkout@v4
+      # 必须先于 setup-node（cache: pnpm 要找到可执行文件）；版本读 packageManager。
+      # pnpm 12 要 6.1.0 起（更早的跳过它的 postinstall，跑到的是占位脚本）；钉确切版本，
+      # 浮动的 @v6 不保证跟上
+      - uses: pnpm/action-setup@v6.1.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm check
+      - run: pnpm typecheck
+
+      # 同时断言 DATABASE_URL 有效：这一步过了，集成测试就不会静默跳过
+      - run: pnpm db:migrate
+
+      - run: pnpm test
+
+      # ⚠️ 去掉 env 再构建：镜像构建期没有任何 env，模块顶层读 env 的 bug 只有这样才暴露
+      - run: env -u DATABASE_URL -u TEST_DATABASE_URL pnpm build
+      # 跑一次打包后的迁移入口：bundle 能不能在没有 node_modules 依赖的情况下跑起来
+      - run: node dist/bin/migrate.cjs
+
+      - run: helm lint charts/ticketodo -f charts/ticketodo/values.example.yaml
+
+  build:
+    if: github.event_name == 'pull_request'
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # semantic-release 按 Conventional Commits 算版本（.releaserc.json），只有 feat / fix / perf /
+  # BREAKING 才发版，其余提交这一步空转。镜像与 chart 在它的 publishCmd 里推，别拆成「打 tag 触发另一个
+  # workflow」：GITHUB_TOKEN 打的 tag 不触发 workflow，那条链默认是断的。
+  # publishCmd 先镜像后 chart：chart 一出现在 OCI 源里就可能被装，它指的镜像得已经在。
+  release:
+    if: github.event_name == 'push' && github.ref_name == github.event.repository.default_branch
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write # release commit、tag、GitHub Release
+      packages: write # 推 GHCR
+      issues: write # @semantic-release/github 在关联的 issue / PR 上留言
+      pull-requests: write
+    steps:
+      # 要全量历史与 tag 才算得出版本（基线 tag v0.0.0 也在里面）
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6.1.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - uses: docker/setup-buildx-action@v3
+      # helm push 也用这份凭证（Helm 回落读 Docker 的），别再加 helm registry login
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # publishCmd 从这两个变量取坐标；GHCR 只接受小写路径。IMAGE 也写在 values.yaml 的 image.repository 里。
+      # ⚠️ CHART_REPO 别改成 owner 根：helm push 以 chart 名作最后一段，会与镜像撞路径、盖掉同版本号的镜像
+      - run: |
+          echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+          echo "CHART_REPO=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/charts" >> "$GITHUB_ENV"
+
+      - run: pnpm exec semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 别设 GIT_AUTHOR_*，release commit 作者就用 semantic-release-bot：semantic-release 把名字含
+          # auth / key / token 等的变量当密钥，值在发版说明里一律换成 [secure]，作者名 yupanzi 会让
+          # 仓库链接全断。往这一步加变量同理，值别是普通单词
+          # release commit 是普通 git commit，不关的话会跑 husky 钩子：门禁 check job 已跑过，
+          # commitlint 还会拿自动生成的发版说明去卡行长
+          HUSKY: 0
