@@ -11,6 +11,8 @@ import { defineConfig } from "tsup";
 export default defineConfig({
 	entry: {
 		"bin/migrate": "src/bin/migrate.ts",
+		// 键名即 chart 里 cronjobs 的键（不能带连字符）
+		"bin/cron/dueremind": "src/bin/cron/dueremind.ts",
 	},
 	format: ["cjs"],
 	platform: "node",
