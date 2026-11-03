@@ -10,6 +10,7 @@ import { auditsFor, hasTestDb, testDb, uniq } from "~/test/db";
 import { actor } from "~/test/trpc";
 
 type Actor = Awaited<ReturnType<typeof actor>>;
+type ListInput = Parameters<Actor["api"]["item"]["list"]>[0];
 
 async function codeOf<T>(p: Promise<T>): Promise<string | undefined> {
 	try {
@@ -400,7 +401,6 @@ describe.skipIf(!hasTestDb)("item API", () => {
 	describe("列表排序与翻页", () => {
 		let me: Actor;
 		const c = { p1Late: "", p0None: "", p1Soon: "", p0Today: "", p3Past: "" };
-		type ListInput = Parameters<Actor["api"]["item"]["list"]>[0];
 
 		/** 每页 2 条一路翻到底：验证 keyset 不漏不重 */
 		async function walk(input: ListInput = {}): Promise<string[]> {
@@ -502,7 +502,6 @@ describe.skipIf(!hasTestDb)("item API", () => {
 				(await me.api.item.list({ assigneeIds: [me.user.id], ...input })).items
 					.map((i) => i.code)
 					.sort();
-			type ListInput = Parameters<Actor["api"]["item"]["list"]>[0];
 
 			expect(
 				await codes({ tagIds: [await tagId(ca), await tagId(cb)] }),
@@ -532,9 +531,7 @@ describe.skipIf(!hasTestDb)("item API", () => {
 			const none = await t();
 			const resolved = await t(today);
 			await me.api.item.transition({ code: resolved, to: "resolved" });
-			const codes = async (
-				due: Parameters<Actor["api"]["item"]["list"]>[0]["due"],
-			) =>
+			const codes = async (due: ListInput["due"]) =>
 				(await me.api.item.list({ assigneeIds: [me.user.id], due })).items
 					.map((i) => i.code)
 					.sort();

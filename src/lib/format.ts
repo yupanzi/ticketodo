@@ -1,7 +1,12 @@
 import { formatDistanceToNow } from "date-fns";
 import { zhCN } from "date-fns/locale";
 
-import { APP_TIMEZONE, todayInAppTz, weekdayOf } from "~/domain/due";
+import {
+	APP_TIMEZONE,
+	type DayRange,
+	todayInAppTz,
+	weekdayOf,
+} from "~/domain/due";
 
 // 显示一律北京时间：与「今天」「逾期」「单号日期」同一口径，不随浏览器时区变
 const DATE_TIME = new Intl.DateTimeFormat("zh-CN", {
@@ -37,8 +42,8 @@ export function formatDayWeek(day: string): string {
 	return `${formatDay(day)} ${WEEKDAY[weekdayOf(day)]}`;
 }
 
-/** 起止日期：两端、只有起、只有止 */
-export function formatDayRange(r: { from?: string; to?: string }): string {
+/** 空范围返回空串：调用方据此显示占位文字 */
+export function formatDayRange(r: DayRange): string {
 	if (r.from && r.to)
 		return r.from === r.to
 			? formatDay(r.from)

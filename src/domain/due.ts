@@ -19,6 +19,12 @@ export function todayInAppTz(now: Date = new Date()): string {
 	return DAY_FORMAT.format(now);
 }
 
+/** 起止都含当天（`YYYY-MM-DD`）；两端都空 = 不限 */
+export interface DayRange {
+	from?: string;
+	to?: string;
+}
+
 export function addDays(day: string, n: number): string {
 	const d = new Date(`${day}T00:00:00Z`);
 	d.setUTCDate(d.getUTCDate() + n);

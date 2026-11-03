@@ -11,6 +11,7 @@ import {
 	ITEM_SORTS,
 	type ItemSort,
 	NATURAL_DIR,
+	SORT_DIRS,
 } from "~/domain/item-list";
 import { PRIORITIES, type Priority } from "~/domain/priority";
 
@@ -28,11 +29,7 @@ export interface ListFilterState {
 }
 
 /** 不看已关闭的：日常看的是还要做的事 */
-export const DEFAULT_STATUSES: ItemStatus[] = [
-	"open",
-	"in_progress",
-	"resolved",
-];
+const DEFAULT_STATUSES: ItemStatus[] = ["open", "in_progress", "resolved"];
 
 export const DEFAULT_FILTERS: ListFilterState = {
 	q: "",
@@ -77,7 +74,7 @@ export function parseListFilters(p: Params): ListFilterState {
 	const pick = <T extends string>(k: string, allowed: readonly T[]) =>
 		list(k).filter((x): x is T => allowed.includes(x as T));
 	const by = ITEM_SORTS.find((s) => s === one("sort"));
-	const order = one("order");
+	const dir = SORT_DIRS.find((d) => d === one("order"));
 	return {
 		q: one("q") ?? "",
 		types: pick("type", ITEM_TYPES),
@@ -93,17 +90,9 @@ export function parseListFilters(p: Params): ListFilterState {
 		assigneeIds: list("assignee").filter((x) => USER_ID.test(x)),
 		reporterIds: list("reporter").filter((x) => USER_ID.test(x)),
 		due: parseDue(one("due")),
-		sort: by
-			? {
-					by,
-					dir: order === "asc" || order === "desc" ? order : NATURAL_DIR[by],
-				}
-			: DEFAULT_SORT,
+		sort: by ? { by, dir: dir ?? NATURAL_DIR[by] } : DEFAULT_SORT,
 	};
 }
-
-const sameList = (a: readonly unknown[], b: readonly unknown[]) =>
-	a.length === b.length && a.every((x, i) => x === b[i]);
 
 /** 筛选 → `?…`：与默认相同的项不写，逗号不转义（地址栏里好读） */
 export function toSearch(f: ListFilterState): string {
@@ -111,7 +100,7 @@ export function toSearch(f: ListFilterState): string {
 	const put = (k: string, v: string) => parts.push([k, v]);
 	if (f.q.trim()) put("q", f.q.trim());
 	if (f.types.length) put("type", f.types.join(","));
-	if (!sameList(f.statuses, DEFAULT_STATUSES))
+	if (f.statuses.join() !== DEFAULT_STATUSES.join())
 		put("status", f.statuses.join(","));
 	if (f.priorities.length) put("priority", f.priorities.join(","));
 	if (f.tagIds.length) put("tag", f.tagIds.join(","));

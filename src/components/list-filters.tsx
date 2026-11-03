@@ -6,7 +6,6 @@ import {
 	type ComponentProps,
 	type ReactNode,
 	type RefObject,
-	useDeferredValue,
 	useRef,
 	useState,
 } from "react";
@@ -40,6 +39,7 @@ import { Chip } from "./chip";
 import { DayRangeCalendar } from "./date-picker";
 import { useMe } from "./me-context";
 import { UserAvatar } from "./user-avatar";
+import { useUserSearch } from "./user-picker";
 
 /** 分面筛选的按钮：没选时是虚线框 + 维度名，选了以后跟着已选项（超过两项只给数量） */
 function FacetTrigger({
@@ -90,7 +90,7 @@ function focusCommand(ref: RefObject<HTMLDivElement | null>) {
 	};
 }
 
-export interface FacetOption<V> {
+interface FacetOption<V> {
 	value: V;
 	label: string;
 	icon?: ReactNode;
@@ -221,18 +221,11 @@ export function PeopleFacet({
 	const trpc = useTRPC();
 	const me = useMe();
 	const [open, setOpen] = useState(false);
-	const [q, setQ] = useState("");
-	const deferred = useDeferredValue(q);
+	const { q, setQ, users: found, isFetching } = useUserSearch(open);
 	const { data: picked = [] } = useQuery(
 		trpc.user.byIds.queryOptions(
 			{ ids: selected },
 			{ enabled: selected.length > 0, placeholderData: keepPreviousData },
-		),
-	);
-	const { data: found = [], isFetching } = useQuery(
-		trpc.user.search.queryOptions(
-			{ q: deferred },
-			{ enabled: open, placeholderData: keepPreviousData },
 		),
 	);
 	const rest = found

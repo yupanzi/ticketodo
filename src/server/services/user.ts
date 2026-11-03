@@ -17,6 +17,13 @@ export interface UserOption {
 	email: string | null;
 }
 
+const optionColumns = {
+	id: user.id,
+	name: user.name,
+	image: user.image,
+	email: user.email,
+};
+
 function toOption(u: {
 	id: string;
 	name: string;
@@ -34,12 +41,7 @@ export async function searchUsers(
 ): Promise<UserOption[]> {
 	const term = q.trim().replace(/[\\%_]/g, (c) => `\\${c}`);
 	const rows = await db
-		.select({
-			id: user.id,
-			name: user.name,
-			image: user.image,
-			email: user.email,
-		})
+		.select(optionColumns)
 		.from(user)
 		.where(
 			term
@@ -57,12 +59,7 @@ export async function usersByIds(
 ): Promise<UserOption[]> {
 	if (!ids.length) return [];
 	const rows = await db
-		.select({
-			id: user.id,
-			name: user.name,
-			image: user.image,
-			email: user.email,
-		})
+		.select(optionColumns)
 		.from(user)
 		.where(inArray(user.id, ids))
 		.orderBy(asc(user.name));
@@ -79,10 +76,7 @@ export async function listUsersForAdmin(
 ): Promise<AdminUserView[]> {
 	const rows = await db
 		.select({
-			id: user.id,
-			name: user.name,
-			image: user.image,
-			email: user.email,
+			...optionColumns,
 			role: user.role,
 			createdAt: user.createdAt,
 		})

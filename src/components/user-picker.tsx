@@ -28,6 +28,20 @@ export interface PickedUser {
 	image: string | null;
 }
 
+/** 搜登录过的人（user 表）：弹层开着才查，换词时留着上次结果不闪 */
+export function useUserSearch(open: boolean) {
+	const trpc = useTRPC();
+	const [q, setQ] = useState("");
+	const deferred = useDeferredValue(q);
+	const { data: users = [], isFetching } = useQuery(
+		trpc.user.search.queryOptions(
+			{ q: deferred },
+			{ enabled: open, placeholderData: keepPreviousData },
+		),
+	);
+	return { q, setQ, users, isFetching };
+}
+
 /** 只能选登录过的人：搜的是 user 表 */
 export function UserPicker({
 	value,
@@ -42,16 +56,8 @@ export function UserPicker({
 	disabled?: boolean;
 	id?: string;
 }) {
-	const trpc = useTRPC();
 	const [open, setOpen] = useState(false);
-	const [q, setQ] = useState("");
-	const deferred = useDeferredValue(q);
-	const { data = [], isFetching } = useQuery(
-		trpc.user.search.queryOptions(
-			{ q: deferred },
-			{ enabled: open, placeholderData: keepPreviousData },
-		),
-	);
+	const { q, setQ, users, isFetching } = useUserSearch(open);
 	return (
 		<Popover onOpenChange={setOpen} open={open}>
 			<PopoverTrigger asChild>
@@ -86,7 +92,7 @@ export function UserPicker({
 							{isFetching ? "搜索中…" : "没有找到（只能选登录过的人）"}
 						</CommandEmpty>
 						<CommandGroup>
-							{data.map((u) => (
+							{users.map((u) => (
 								<CommandItem
 									key={u.id}
 									onSelect={() => {

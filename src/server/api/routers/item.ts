@@ -6,7 +6,7 @@ import {
 	ITEM_TYPES,
 	TITLE_MAX_LENGTH,
 } from "~/domain/item";
-import { DUE_PRESETS, ITEM_SORTS } from "~/domain/item-list";
+import { DUE_PRESETS, ITEM_SORTS, SORT_DIRS } from "~/domain/item-list";
 import { PRIORITIES } from "~/domain/priority";
 import { TAG_NAME_MAX_LENGTH } from "~/domain/tag";
 import {
@@ -88,7 +88,7 @@ export const itemRouter = createTRPCRouter({
 					.optional(),
 				q: z.string().max(100).optional(),
 				sort: z
-					.object({ by: z.enum(ITEM_SORTS), dir: z.enum(["asc", "desc"]) })
+					.object({ by: z.enum(ITEM_SORTS), dir: z.enum(SORT_DIRS) })
 					.optional(),
 				cursor: z.number().int().positive().optional(),
 				limit: z.number().int().min(1).max(100).default(50),

@@ -61,7 +61,23 @@ import { DueFacet, FacetedFilter, PeopleFacet } from "./list-filters";
 import { useMe } from "./me-context";
 import { UserChip } from "./user-avatar";
 
-type Mine = "all" | "assigned" | "reported";
+const MINES = ["all", "assigned", "reported"] as const;
+type Mine = (typeof MINES)[number];
+
+const TYPE_OPTIONS = ITEM_TYPES.map((t) => ({
+	value: t,
+	label: TYPE_LABEL[t],
+}));
+const STATUS_OPTIONS = ITEM_STATUSES.map((s) => ({
+	value: s,
+	label: STATUS_LABEL[s],
+	icon: <StatusDot status={s} />,
+}));
+const PRIORITY_OPTIONS = PRIORITIES.map((p) => ({
+	value: p,
+	label: p,
+	hint: PRIORITY_META[p].label,
+}));
 
 const SORT_HINT: Record<ItemSortBy, Record<SortDir, string>> = {
 	priority: { asc: "P0 在前", desc: "P3 在前" },
@@ -116,9 +132,6 @@ function SortHead({
 	);
 }
 
-const sameIds = (a: string[], b: string[]) =>
-	a.length === b.length && a.every((x) => b.includes(x));
-
 export function ItemsTable({ initial }: { initial: ListFilterState }) {
 	const trpc = useTRPC();
 	const me = useMe();
@@ -138,33 +151,26 @@ export function ItemsTable({ initial }: { initial: ListFilterState }) {
 	}, [f, deferredQ, pathname, router]);
 
 	// 「我负责的 / 我提的」是人员筛选的快捷方式：选了别人时三个都不亮
-	const mine: Mine | "" =
-		!f.assigneeIds.length && !f.reporterIds.length
-			? "all"
-			: sameIds(f.assigneeIds, [me.id]) && !f.reporterIds.length
-				? "assigned"
-				: sameIds(f.reporterIds, [me.id]) && !f.assigneeIds.length
-					? "reported"
-					: "";
-	const setMine = (m: Mine) =>
-		setF((prev) => ({
-			...prev,
-			assigneeIds: m === "assigned" ? [me.id] : [],
-			reporterIds: m === "reported" ? [me.id] : [],
-		}));
+	const peopleOf = (m: Mine) => ({
+		assigneeIds: m === "assigned" ? [me.id] : [],
+		reporterIds: m === "reported" ? [me.id] : [],
+	});
+	const mine =
+		MINES.find((m) => {
+			const p = peopleOf(m);
+			return (
+				p.assigneeIds.join() === f.assigneeIds.join() &&
+				p.reporterIds.join() === f.reporterIds.join()
+			);
+		}) ?? "";
+	const setMine = (m: Mine) => setF((prev) => ({ ...prev, ...peopleOf(m) }));
 
 	const list = useInfiniteQuery(
 		trpc.item.list.infiniteQueryOptions(
 			{
-				types: f.types,
-				statuses: f.statuses,
-				priorities: f.priorities,
-				tagIds: f.tagIds,
-				assigneeIds: f.assigneeIds,
-				reporterIds: f.reporterIds,
+				...f,
 				due: f.due ?? undefined,
 				q: deferredQ.trim() || undefined,
-				sort: f.sort,
 				limit: 50,
 			},
 			{ getNextPageParam: (last) => last.nextCursor ?? undefined },
@@ -205,30 +211,19 @@ export function ItemsTable({ initial }: { initial: ListFilterState }) {
 					</div>
 					<FacetedFilter
 						onChange={(v) => set("types", v)}
-						options={ITEM_TYPES.map((t) => ({
-							value: t,
-							label: TYPE_LABEL[t],
-						}))}
+						options={TYPE_OPTIONS}
 						selected={f.types}
 						title="类型"
 					/>
 					<FacetedFilter
 						onChange={(v) => set("statuses", v)}
-						options={ITEM_STATUSES.map((s) => ({
-							value: s,
-							label: STATUS_LABEL[s],
-							icon: <StatusDot status={s} />,
-						}))}
+						options={STATUS_OPTIONS}
 						selected={f.statuses}
 						title="状态"
 					/>
 					<FacetedFilter
 						onChange={(v) => set("priorities", v)}
-						options={PRIORITIES.map((p) => ({
-							value: p,
-							label: p,
-							hint: PRIORITY_META[p].label,
-						}))}
+						options={PRIORITY_OPTIONS}
 						selected={f.priorities}
 						title="优先级"
 					/>

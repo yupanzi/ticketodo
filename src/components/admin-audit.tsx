@@ -21,10 +21,11 @@ import {
 	TableHeader,
 	TableRow,
 } from "~/components/ui/table";
+import type { DayRange } from "~/domain/due";
 import { formatDateTime } from "~/lib/format";
 import { useTRPC } from "~/trpc/react";
 
-import { DateRangePicker, type DayRange } from "./date-picker";
+import { DateRangePicker } from "./date-picker";
 import { PageHeader, Panel } from "./layout";
 
 /** 起止日期按北京时间的整天算 */

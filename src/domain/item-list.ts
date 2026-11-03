@@ -1,8 +1,11 @@
 /** 列表的排序与到期筛选：服务端校验入参、前端读写地址栏都用这里的词表 */
 
+import type { DayRange } from "./due";
+
 export const ITEM_SORTS = ["priority", "due", "created", "updated"] as const;
 export type ItemSortBy = (typeof ITEM_SORTS)[number];
-export type SortDir = "asc" | "desc";
+export const SORT_DIRS = ["asc", "desc"] as const;
+export type SortDir = (typeof SORT_DIRS)[number];
 
 export interface ItemSort {
 	by: ItemSortBy;
@@ -34,10 +37,5 @@ export const DUE_PRESET_LABEL: Record<DuePreset, string> = {
 	none: "未设日期",
 };
 
-/** 起止都含当天；至少给一端 */
-export interface DueRange {
-	from?: string;
-	to?: string;
-}
-
-export type DueFilter = DuePreset | DueRange;
+/** 自定义范围至少给一端：两端都空就是不筛 */
+export type DueFilter = DuePreset | DayRange;

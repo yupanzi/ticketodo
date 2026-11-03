@@ -185,7 +185,7 @@ function dueWhere(due: DueFilter): SQL | undefined {
 	if (due === "next7")
 		return and(
 			gte(items.dueDate, todaySql),
-			sql`${items.dueDate} <= ${todaySql} + 6`,
+			lte(items.dueDate, sql`${todaySql} + 6`),
 			active,
 		);
 	if (due === "none") return isNull(items.dueDate);
@@ -231,6 +231,9 @@ function sortKeys({ by, dir }: ItemSort): SortKey[] {
 			return [{ expr: items.id, dir }];
 	}
 }
+
+const orderOf = (keys: SortKey[]) =>
+	keys.map((k) => (k.dir === "asc" ? asc(k.expr) : desc(k.expr)));
 
 /**
  * keyset：排在游标那一行之后的行。游标只是 id，排序值现查：updated_at 是微秒，经 JS Date 倒一手
@@ -305,7 +308,7 @@ export async function listItems(
 
 	const rows = await selectItems(ctx.db)
 		.where(and(...conds))
-		.orderBy(...keys.map((k) => (k.dir === "asc" ? asc(k.expr) : desc(k.expr))))
+		.orderBy(...orderOf(keys))
 		.limit(f.limit + 1);
 	const page = rows.slice(0, f.limit);
 	return {
@@ -325,20 +328,20 @@ export interface MySummary {
 	active: number;
 }
 
-/** 首页「今日概览」：一条 SQL 用 FILTER 算齐四个数，与列表的筛选口径一致 */
+/** 首页「今日概览」：一条 SQL 用 FILTER 算齐四个数；到期两项直接用列表的 `dueWhere`，口径不分叉 */
 export async function mySummary(ctx: ServiceContext): Promise<MySummary> {
 	const me = ctx.actor.id;
-	const mineActive = sql`${items.assigneeId} = ${me} AND ${items.status} IN ('open', 'in_progress')`;
-	const count = (cond: SQL) =>
-		sql<number>`count(*) FILTER (WHERE ${cond})`.mapWith(Number);
+	const mine = eq(items.assigneeId, me);
+	const count = (...conds: (SQL | undefined)[]) =>
+		sql<number>`count(*) FILTER (WHERE ${and(...conds)})`.mapWith(Number);
 	const [row] = await ctx.db
 		.select({
-			overdue: count(sql`${mineActive} AND ${items.dueDate} < ${todaySql}`),
-			dueToday: count(sql`${mineActive} AND ${items.dueDate} = ${todaySql}`),
+			overdue: count(mine, dueWhere("overdue")),
+			dueToday: count(mine, dueWhere("today")),
 			awaitingConfirmation: count(
 				sql`${items.reporterId} = ${me} AND ${items.type} = 'ticket' AND ${items.status} = 'resolved'`,
 			),
-			active: count(mineActive),
+			active: count(mine, inArray(items.status, [...ACTIVE_STATUSES])),
 		})
 		.from(items)
 		.where(visibleItemsWhere(ctx.actor));
@@ -383,8 +386,8 @@ export async function boardItems(
 				: not(eq(items.status, "closed"));
 	const rows = await selectItems(ctx.db)
 		.where(and(visibleItemsWhere(ctx.actor), scopeCond))
-		// 期望完成日期近的在前，没设日期的在后，再按新旧
-		.orderBy(sql`${items.dueDate} ASC NULLS LAST`, desc(items.id))
+		// 与列表默认排序同一套键：象限内优先级相同，即期望完成近的在前、没设的在后
+		.orderBy(...orderOf(sortKeys(DEFAULT_SORT)))
 		.limit(BOARD_LIMIT);
 	return withTags(ctx.db, rows);
 }
