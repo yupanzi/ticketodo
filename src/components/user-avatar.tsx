@@ -26,7 +26,8 @@ export function UserChip({
 	user: { name: string; image: string | null };
 }) {
 	return (
-		<span className="inline-flex items-center gap-1.5">
+		// align-middle：inline-flex 的基线取第一个子元素，头像是 <img> 时会比纯文字的行高出一截
+		<span className="inline-flex items-center gap-1.5 align-middle">
 			<UserAvatar user={user} />
 			<span className="truncate">{user.name}</span>
 		</span>

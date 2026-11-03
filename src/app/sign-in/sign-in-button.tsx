@@ -9,6 +9,7 @@ export function SignInButton({ callbackURL }: { callbackURL: string }) {
 	const [pending, setPending] = useState(false);
 	return (
 		<Button
+			className="w-full"
 			disabled={pending}
 			onClick={async () => {
 				setPending(true);

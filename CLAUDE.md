@@ -35,7 +35,8 @@ src/
 ├── trpc/            query-client · react（客户端 Provider）· server（RSC 预取）
 ├── app/             sign-in · (app)/{看板, items, items/new, items/[code], notifications, admin/*}
 │                    · api/{auth, trpc, healthz}
-├── components/      业务组件；ui/ 是 shadcn 生成的，不手改（Biome 也不查）
+├── components/      layout（PageHeader · Panel · EmptyState · Field · PropertyList）· chip · badges
+│                    · app-shell（侧栏）· 各页组件；ui/ 是 shadcn 生成后调过尺寸的（Biome 不查）
 ├── proxy.ts         定 x-request-id；页面无会话 cookie 去登录页
 ├── instrumentation.ts  启动校验 · onRequestError 走 pino
 ├── bin/             migrate · cron/dueremind（tsup 打成自包含 cjs）
@@ -112,6 +113,21 @@ charts/ticketodo/    Helm：Deployment + Service + Ingress + migrate hook + Cron
 - 到期提醒去重靠**部分**唯一索引（`dedupe_key IS NOT NULL`），`ON CONFLICT` 要带同样的谓词。
   ⚠️ 别改成 `NULLS NOT DISTINCT`：会把评论、状态通知也去重掉。
 
+### 界面（`app/globals.css`、`components/`）
+
+- **字号与尺寸是 token**：`@theme` 把 `text-sm` 定为 15px 正文（xs 13 · base 16 · lg 17 · xl 20 ·
+  2xl 24），控件高 36px（`h-9`）。别在组件里写 `text-[14px]` 这类魔法数，要调就调 token。
+- **黑白，不加品牌色**：颜色只表达语义——红 = P0 / 逾期 / 危险，琥珀 = 紧急不重要 / 快到期，绿 =
+  已解决。优先级「重要 = 实心、紧急 = 暖色」：P0 红实心 · P1 黑实心 · P2 琥珀浅底 · P3 描边（`badges.tsx`）。
+- **`--canvas` 是页面底色，`--background` 是控件底色**：别把 `--background` 调灰，outline 按钮与输入框
+  会跟着变灰。
+- **一屏只有一个主按钮**（`variant="default"`），其余 outline / ghost；详情页状态操作由 `emphasisOf`
+  挑主次。
+- 页面一律 `PageHeader` + `Panel`（表格用 `Panel flush`，表头 `bg-muted/40`），小标签一律 `Chip`：
+  别再手搓卡片与 badge。
+- ⚠️ **`ui/` 改过尺寸**（button · input · select · tabs · toggle · table · badge · command ·
+  input-group）：`shadcn add` 提示覆盖已有文件时一律拒绝；要升级某个组件先 diff，再把尺寸改回 token。
+
 ### 构建期与运行时
 
 - ⚠️ **构建期零 env**：模块顶层别读 env、别建 better-auth / pg 实例（`getServerEnv` / `getDb` /
@@ -175,6 +191,8 @@ mv .env /tmp/x && pnpm build; mv /tmp/x .env   # 构建期零 env
   `code=` 与 token。
 - **镜像**：无入口 exit 64；`migrate.cjs` 迁移成功；`server.js` 缺 env exit 1、齐了 `/api/healthz`
   200；`dueremind.cjs` exit 0。
+- **界面**：Chrome DevTools 看 1440 与 390 两个宽度。dev 页面不跟着源码变（改过 `ui/` 或开着 dev 跑了
+  `pnpm build`）：停 dev、删 `.next/dev` 再起。
 - **chart**：`helm lint charts/ticketodo -f charts/ticketodo/values.example.yaml`；`helm template`
   看 web 拿三个凭证、迁移与 cron 只拿 `DATABASE_URL`，`BETTER_AUTH_URL` 由 host 派生。
 

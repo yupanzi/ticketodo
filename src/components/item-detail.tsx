@@ -1,6 +1,15 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+	ArrowRightLeft,
+	MoreHorizontal,
+	Pencil,
+	RotateCcw,
+	Ticket,
+	Trash2,
+} from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -14,7 +23,6 @@ import {
 	AlertDialogFooter,
 	AlertDialogHeader,
 	AlertDialogTitle,
-	AlertDialogTrigger,
 } from "~/components/ui/alert-dialog";
 import { Button } from "~/components/ui/button";
 import {
@@ -24,12 +32,16 @@ import {
 	DialogFooter,
 	DialogHeader,
 	DialogTitle,
-	DialogTrigger,
 } from "~/components/ui/dialog";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from "~/components/ui/dropdown-menu";
 import { Skeleton } from "~/components/ui/skeleton";
 import { todayInAppTz } from "~/domain/due";
-import { STATUS_LABEL } from "~/domain/item";
-import { PRIORITY_META } from "~/domain/priority";
+import { type ItemStatus, type ItemType, STATUS_LABEL } from "~/domain/item";
 import { findEdge } from "~/domain/status";
 import { formatDateTime, formatDay } from "~/lib/format";
 import { type RouterOutputs, useTRPC } from "~/trpc/react";
@@ -39,16 +51,23 @@ import {
 	PriorityBadge,
 	StatusBadge,
 	TagBadge,
-	TypeBadge,
+	TodoBadge,
 } from "./badges";
+import { Chip } from "./chip";
 import { ItemActivity } from "./item-activity";
 import { ItemFields, type ItemFieldValues } from "./item-fields";
+import {
+	EmptyState,
+	PageHeader,
+	Panel,
+	Property,
+	PropertyList,
+} from "./layout";
 import { Markdown } from "./markdown";
 import { UserChip } from "./user-avatar";
 import { type PickedUser, UserPicker } from "./user-picker";
 
-type Detail = RouterOutputs["item"]["byCode"];
-type Item = Detail["item"];
+type Item = RouterOutputs["item"]["byCode"]["item"];
 
 function useRefresh(code: string) {
 	const trpc = useTRPC();
@@ -60,10 +79,79 @@ function useRefresh(code: string) {
 		]);
 }
 
-function EditDialog({ item }: { item: Item }) {
+/**
+ * 状态按钮的分量：「往前推进」的那一步是主按钮（全页只有一个），退回 / 打回是次要，撤回最弱。
+ */
+type Emphasis = "primary" | "secondary" | "quiet";
+
+function emphasisOf(
+	type: ItemType,
+	from: ItemStatus,
+	to: ItemStatus,
+): Emphasis {
+	if (type === "ticket" && to === "closed" && from !== "resolved")
+		return "quiet";
+	const forward =
+		(from === "open" && to === "in_progress") ||
+		to === "resolved" ||
+		(from === "resolved" && to === "closed") ||
+		(type === "todo" && to === "closed") ||
+		(from === "closed" && to === "open");
+	return forward ? "primary" : "secondary";
+}
+
+function StatusActions({
+	item,
+	statuses,
+}: {
+	item: Item;
+	statuses: ItemStatus[];
+}) {
 	const trpc = useTRPC();
 	const refresh = useRefresh(item.code);
-	const [open, setOpen] = useState(false);
+	const transition = useMutation(
+		trpc.item.transition.mutationOptions({
+			onSuccess: refresh,
+			onError: (err) => toast.error(err.message),
+		}),
+	);
+	// 全页只留一个主按钮：第一个「往前推进」的
+	const primary = statuses.find(
+		(to) => emphasisOf(item.type, item.status, to) === "primary",
+	);
+	return statuses.map((to) => {
+		const base = emphasisOf(item.type, item.status, to);
+		const emphasis = base === "primary" && to !== primary ? "secondary" : base;
+		return (
+			<Button
+				disabled={transition.isPending}
+				key={to}
+				onClick={() => transition.mutate({ code: item.code, to })}
+				variant={
+					emphasis === "primary"
+						? "default"
+						: emphasis === "quiet"
+							? "ghost"
+							: "outline"
+				}
+			>
+				{findEdge(item.type, item.status, to)?.label ?? STATUS_LABEL[to]}
+			</Button>
+		);
+	});
+}
+
+function EditDialog({
+	item,
+	open,
+	onOpenChange,
+}: {
+	item: Item;
+	open: boolean;
+	onOpenChange: (o: boolean) => void;
+}) {
+	const trpc = useTRPC();
+	const refresh = useRefresh(item.code);
 	const initial = (): ItemFieldValues => ({
 		title: item.title,
 		description: item.description,
@@ -76,7 +164,7 @@ function EditDialog({ item }: { item: Item }) {
 		trpc.item.update.mutationOptions({
 			onSuccess: async () => {
 				await refresh();
-				setOpen(false);
+				onOpenChange(false);
 			},
 			onError: (err) => toast.error(err.message),
 		}),
@@ -85,16 +173,11 @@ function EditDialog({ item }: { item: Item }) {
 		<Dialog
 			onOpenChange={(o) => {
 				if (o) setFields(initial());
-				setOpen(o);
+				onOpenChange(o);
 			}}
 			open={open}
 		>
-			<DialogTrigger asChild>
-				<Button size="sm" variant="outline">
-					编辑
-				</Button>
-			</DialogTrigger>
-			<DialogContent className="sm:max-w-2xl">
+			<DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-2xl">
 				<DialogHeader>
 					<DialogTitle>编辑 {item.code}</DialogTitle>
 					<DialogDescription>
@@ -102,7 +185,7 @@ function EditDialog({ item }: { item: Item }) {
 					</DialogDescription>
 				</DialogHeader>
 				<form
-					className="flex flex-col gap-4"
+					className="flex flex-col gap-5"
 					onSubmit={(e) => {
 						e.preventDefault();
 						update.mutate({
@@ -120,6 +203,13 @@ function EditDialog({ item }: { item: Item }) {
 					<ItemFields onChange={setFields} value={fields} />
 					<DialogFooter>
 						<Button
+							onClick={() => onOpenChange(false)}
+							type="button"
+							variant="ghost"
+						>
+							取消
+						</Button>
+						<Button
 							disabled={update.isPending || !fields.title.trim()}
 							type="submit"
 						>
@@ -136,18 +226,21 @@ function EditDialog({ item }: { item: Item }) {
 function PickAssigneeDialog({
 	item,
 	mode,
+	open,
+	onOpenChange,
 }: {
 	item: Item;
 	mode: "assign" | "convert";
+	open: boolean;
+	onOpenChange: (o: boolean) => void;
 }) {
 	const trpc = useTRPC();
 	const refresh = useRefresh(item.code);
-	const [open, setOpen] = useState(false);
 	const [picked, setPicked] = useState<PickedUser | null>(null);
 	const done = {
 		onSuccess: async () => {
 			await refresh();
-			setOpen(false);
+			onOpenChange(false);
 			setPicked(null);
 		},
 		onError: (err: { message: string }) => toast.error(err.message),
@@ -155,17 +248,13 @@ function PickAssigneeDialog({
 	const assign = useMutation(trpc.item.assign.mutationOptions(done));
 	const convert = useMutation(trpc.item.convert.mutationOptions(done));
 	const pending = assign.isPending || convert.isPending;
-	const title = mode === "assign" ? "转派给别人" : "转为 Ticket";
 	return (
-		<Dialog onOpenChange={setOpen} open={open}>
-			<DialogTrigger asChild>
-				<Button size="sm" variant="outline">
-					{title}
-				</Button>
-			</DialogTrigger>
+		<Dialog onOpenChange={onOpenChange} open={open}>
 			<DialogContent>
 				<DialogHeader>
-					<DialogTitle>{title}</DialogTitle>
+					<DialogTitle>
+						{mode === "assign" ? "转派给别人" : "转为 Ticket"}
+					</DialogTitle>
 					<DialogDescription>
 						{mode === "assign"
 							? "转派后状态不变，新负责人与提单人都会收到通知。"
@@ -174,6 +263,9 @@ function PickAssigneeDialog({
 				</DialogHeader>
 				<UserPicker onChange={setPicked} value={picked} />
 				<DialogFooter>
+					<Button onClick={() => onOpenChange(false)} variant="ghost">
+						取消
+					</Button>
 					<Button
 						disabled={!picked || pending}
 						onClick={() => {
@@ -191,7 +283,15 @@ function PickAssigneeDialog({
 	);
 }
 
-function DeleteButton({ item }: { item: Item }) {
+function DeleteDialog({
+	item,
+	open,
+	onOpenChange,
+}: {
+	item: Item;
+	open: boolean;
+	onOpenChange: (o: boolean) => void;
+}) {
 	const trpc = useTRPC();
 	const router = useRouter();
 	const qc = useQueryClient();
@@ -206,12 +306,7 @@ function DeleteButton({ item }: { item: Item }) {
 		}),
 	);
 	return (
-		<AlertDialog>
-			<AlertDialogTrigger asChild>
-				<Button size="sm" variant="ghost">
-					删除
-				</Button>
-			</AlertDialogTrigger>
+		<AlertDialog onOpenChange={onOpenChange} open={open}>
 			<AlertDialogContent>
 				<AlertDialogHeader>
 					<AlertDialogTitle>删除 {item.code}？</AlertDialogTitle>
@@ -221,7 +316,10 @@ function DeleteButton({ item }: { item: Item }) {
 				</AlertDialogHeader>
 				<AlertDialogFooter>
 					<AlertDialogCancel>取消</AlertDialogCancel>
-					<AlertDialogAction onClick={() => remove.mutate({ code: item.code })}>
+					<AlertDialogAction
+						className="bg-red-600 text-white hover:bg-red-700"
+						onClick={() => remove.mutate({ code: item.code })}
+					>
 						删除
 					</AlertDialogAction>
 				</AlertDialogFooter>
@@ -230,32 +328,14 @@ function DeleteButton({ item }: { item: Item }) {
 	);
 }
 
-function Field({
-	label,
-	children,
-}: {
-	label: string;
-	children: React.ReactNode;
-}) {
-	return (
-		<div className="flex flex-col gap-1">
-			<dt className="text-muted-foreground text-xs">{label}</dt>
-			<dd className="text-sm">{children}</dd>
-		</div>
-	);
-}
+type DialogKind = "edit" | "assign" | "convert" | "delete" | null;
 
 export function ItemDetail({ code }: { code: string }) {
 	const trpc = useTRPC();
 	const refresh = useRefresh(code);
+	const [dialog, setDialog] = useState<DialogKind>(null);
 	const { data, error, isLoading } = useQuery(
 		trpc.item.byCode.queryOptions({ code }),
-	);
-	const transition = useMutation(
-		trpc.item.transition.mutationOptions({
-			onSuccess: refresh,
-			onError: (err) => toast.error(err.message),
-		}),
 	);
 	const restore = useMutation(
 		trpc.item.restore.mutationOptions({
@@ -264,109 +344,183 @@ export function ItemDetail({ code }: { code: string }) {
 		}),
 	);
 
-	if (isLoading) return <Skeleton className="h-64" />;
+	if (isLoading)
+		return (
+			<div className="flex flex-col gap-4">
+				<Skeleton className="h-24 rounded-xl" />
+				<Skeleton className="h-64 rounded-xl" />
+			</div>
+		);
 	if (error || !data)
 		return (
-			<p className="text-muted-foreground">
-				{error?.message ?? "这张单不存在，或你没有权限查看。"}
-			</p>
+			<Panel>
+				<EmptyState
+					action={
+						<Button asChild variant="outline">
+							<Link href="/items">回到全部单子</Link>
+						</Button>
+					}
+					description={error?.message}
+					title="这张单不存在，或你没有权限查看"
+				/>
+			</Panel>
 		);
 
 	const { item, permissions: can } = data;
 	const today = todayInAppTz();
+	const onOpenChange = (o: boolean) => {
+		if (!o) setDialog(null);
+	};
 
 	return (
-		<div className="grid gap-8 lg:grid-cols-[1fr_16rem]">
-			<div className="flex min-w-0 flex-col gap-6">
-				<header className="flex flex-col gap-3">
-					<div className="flex flex-wrap items-center gap-2 text-sm">
-						<span className="font-mono text-muted-foreground">{item.code}</span>
-						<TypeBadge type={item.type} />
-						<StatusBadge status={item.status} />
-						<PriorityBadge priority={item.priority} withLabel />
-						<DueBadge
-							dueDate={item.dueDate}
-							status={item.status}
-							today={today}
-						/>
-						{item.deletedAt && (
-							<span className="text-destructive text-xs">已删除</span>
-						)}
-					</div>
-					<h1 className="font-semibold text-xl">{item.title}</h1>
-					<div className="flex flex-wrap gap-2">
-						{can.statuses.map((to) => (
-							<Button
-								disabled={transition.isPending}
-								key={to}
-								onClick={() => transition.mutate({ code, to })}
-								size="sm"
-								variant={
-									to === "closed" || to === "resolved" ? "default" : "outline"
-								}
-							>
-								{findEdge(item.type, item.status, to)?.label ??
-									STATUS_LABEL[to]}
+		<>
+			<PageHeader
+				eyebrow={
+					<>
+						<Link className="hover:text-foreground" href="/items">
+							全部单子
+						</Link>
+						<span>/</span>
+						<span className="font-mono">{item.code}</span>
+					</>
+				}
+				size="detail"
+				title={item.title}
+			>
+				<StatusBadge status={item.status} />
+				<PriorityBadge priority={item.priority} withLabel />
+				<DueBadge dueDate={item.dueDate} status={item.status} today={today} />
+				{item.type === "todo" && <TodoBadge />}
+				{item.deletedAt && <Chip tone="red-soft">已删除</Chip>}
+			</PageHeader>
+
+			<div className="mb-6 flex flex-wrap items-center gap-2">
+				<StatusActions item={item} statuses={can.statuses} />
+				{can.statuses.length > 0 && (can.edit || can.assign || can.convert) && (
+					<span aria-hidden className="mx-1 h-6 w-px bg-border" />
+				)}
+				{can.edit && (
+					<Button onClick={() => setDialog("edit")} variant="outline">
+						<Pencil />
+						编辑
+					</Button>
+				)}
+				{can.assign && (
+					<Button onClick={() => setDialog("assign")} variant="outline">
+						<ArrowRightLeft />
+						转派
+					</Button>
+				)}
+				{can.convert && (
+					<Button onClick={() => setDialog("convert")} variant="outline">
+						<Ticket />
+						转为 Ticket
+					</Button>
+				)}
+				{can.restore && (
+					<Button
+						disabled={restore.isPending}
+						onClick={() => restore.mutate({ code })}
+					>
+						<RotateCcw />
+						从回收站恢复
+					</Button>
+				)}
+				{can.delete && (
+					<DropdownMenu>
+						<DropdownMenuTrigger asChild>
+							<Button aria-label="更多操作" size="icon" variant="ghost">
+								<MoreHorizontal />
 							</Button>
-						))}
-						{can.edit && <EditDialog item={item} />}
-						{can.assign && <PickAssigneeDialog item={item} mode="assign" />}
-						{can.convert && <PickAssigneeDialog item={item} mode="convert" />}
-						{can.delete && <DeleteButton item={item} />}
-						{can.restore && (
-							<Button
-								disabled={restore.isPending}
-								onClick={() => restore.mutate({ code })}
-								size="sm"
+						</DropdownMenuTrigger>
+						<DropdownMenuContent align="start">
+							<DropdownMenuItem
+								className="text-red-600 focus:text-red-700"
+								onSelect={() => setDialog("delete")}
 							>
-								从回收站恢复
-							</Button>
-						)}
-					</div>
-				</header>
-				<section className="rounded-md border p-4">
-					{item.description.trim() ? (
-						<Markdown>{item.description}</Markdown>
-					) : (
-						<p className="text-muted-foreground text-sm">没有描述</p>
-					)}
-				</section>
-				<ItemActivity canComment={can.comment} code={code} />
+								<Trash2 />
+								删除
+							</DropdownMenuItem>
+						</DropdownMenuContent>
+					</DropdownMenu>
+				)}
 			</div>
-			<aside>
-				<dl className="flex flex-col gap-4 rounded-md border p-4">
-					<Field label="提单人">
-						<UserChip user={item.reporter} />
-					</Field>
-					<Field label="负责人">
-						<UserChip user={item.assignee} />
-					</Field>
-					<Field label="优先级">
-						{item.priority} · {PRIORITY_META[item.priority].label}
-					</Field>
-					<Field label="期望完成">
-						{item.dueDate ? formatDay(item.dueDate) : "未设置"}
-					</Field>
-					<Field label="标签">
-						{item.tags.length ? (
-							<span className="flex flex-wrap gap-1">
-								{item.tags.map((t) => (
-									<TagBadge color={t.color} key={t.id} name={t.name} />
-								))}
-							</span>
+
+			<div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+				<div className="flex min-w-0 flex-col gap-6">
+					<Panel title="描述">
+						{item.description.trim() ? (
+							<Markdown>{item.description}</Markdown>
 						) : (
-							"无"
+							<p className="text-muted-foreground">没有描述</p>
 						)}
-					</Field>
-					<Field label="创建于">{formatDateTime(item.createdAt)}</Field>
-					{item.resolvedAt && (
-						<Field label="解决于">{formatDateTime(item.resolvedAt)}</Field>
-					)}
-					{item.closedAt && (
-						<Field label="关闭于">{formatDateTime(item.closedAt)}</Field>
-					)}
-				</dl>
-			</aside>
-		</div>
+					</Panel>
+					<Panel flush title="动态">
+						<ItemActivity canComment={can.comment} code={code} />
+					</Panel>
+				</div>
+				<Panel className="lg:sticky lg:top-8" title="详情">
+					<PropertyList>
+						<Property label="提单人">
+							<UserChip user={item.reporter} />
+						</Property>
+						<Property label="负责人">
+							<UserChip user={item.assignee} />
+						</Property>
+						<Property label="优先级">
+							<PriorityBadge priority={item.priority} withLabel />
+						</Property>
+						<Property label="期望完成">
+							{item.dueDate ? formatDay(item.dueDate) : "未设置"}
+						</Property>
+						<Property label="标签">
+							{item.tags.length ? (
+								<span className="flex flex-wrap justify-end gap-1">
+									{item.tags.map((t) => (
+										<TagBadge color={t.color} key={t.id} name={t.name} />
+									))}
+								</span>
+							) : (
+								"无"
+							)}
+						</Property>
+						<Property label="创建于">{formatDateTime(item.createdAt)}</Property>
+						{item.resolvedAt && (
+							<Property label="解决于">
+								{formatDateTime(item.resolvedAt)}
+							</Property>
+						)}
+						{item.closedAt && (
+							<Property label="关闭于">
+								{formatDateTime(item.closedAt)}
+							</Property>
+						)}
+					</PropertyList>
+				</Panel>
+			</div>
+
+			{can.edit && (
+				<EditDialog
+					item={item}
+					onOpenChange={onOpenChange}
+					open={dialog === "edit"}
+				/>
+			)}
+			{(can.assign || can.convert) && (
+				<PickAssigneeDialog
+					item={item}
+					mode={dialog === "convert" ? "convert" : "assign"}
+					onOpenChange={onOpenChange}
+					open={dialog === "assign" || dialog === "convert"}
+				/>
+			)}
+			{can.delete && (
+				<DeleteDialog
+					item={item}
+					onOpenChange={onOpenChange}
+					open={dialog === "delete"}
+				/>
+			)}
+		</>
 	);
 }

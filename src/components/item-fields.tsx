@@ -1,11 +1,11 @@
 "use client";
 
 import { Input } from "~/components/ui/input";
-import { Label } from "~/components/ui/label";
 import { Textarea } from "~/components/ui/textarea";
 import { DESCRIPTION_MAX_LENGTH, TITLE_MAX_LENGTH } from "~/domain/item";
 import type { Priority } from "~/domain/priority";
 
+import { Field } from "./layout";
 import { PriorityPicker } from "./priority-picker";
 import { TagInput } from "./tag-input";
 
@@ -30,8 +30,7 @@ export function ItemFields({
 		onChange({ ...value, [k]: v });
 	return (
 		<>
-			<div className="flex flex-col gap-1.5">
-				<Label htmlFor="item-title">标题</Label>
+			<Field htmlFor="item-title" label="标题" required>
 				<Input
 					autoFocus
 					id="item-title"
@@ -41,44 +40,47 @@ export function ItemFields({
 					required
 					value={value.title}
 				/>
-			</div>
-			<div className="flex flex-col gap-1.5">
-				<span className="font-medium text-sm">优先级</span>
+			</Field>
+			<Field
+				hint="重要：影响目标、不做会有后果；紧急：有时限、拖不得"
+				label="优先级"
+			>
 				<PriorityPicker
 					onChange={(p) => set("priority", p)}
 					value={value.priority}
 				/>
-			</div>
-			<div className="grid gap-4 sm:grid-cols-2">
-				<div className="flex flex-col gap-1.5">
-					<Label htmlFor="item-due">期望完成日期</Label>
+			</Field>
+			<div className="grid gap-5 sm:grid-cols-2">
+				<Field htmlFor="item-due" label="期望完成日期">
 					<Input
 						id="item-due"
 						onChange={(e) => set("dueDate", e.target.value)}
 						type="date"
 						value={value.dueDate}
 					/>
-				</div>
-				<div className="flex flex-col gap-1.5">
-					<Label htmlFor="item-tags">标签</Label>
+				</Field>
+				<Field hint="回车添加，最多 10 个" htmlFor="item-tags" label="标签">
 					<TagInput
 						id="item-tags"
 						onChange={(t) => set("tags", t)}
 						value={value.tags}
 					/>
-				</div>
+				</Field>
 			</div>
-			<div className="flex flex-col gap-1.5">
-				<Label htmlFor="item-desc">描述</Label>
+			<Field
+				hint="支持 Markdown：- [ ] 任务清单、表格、代码"
+				htmlFor="item-desc"
+				label="描述"
+			>
 				<Textarea
-					className="min-h-40 font-mono text-sm"
+					className="min-h-44 font-mono"
 					id="item-desc"
 					maxLength={DESCRIPTION_MAX_LENGTH}
 					onChange={(e) => set("description", e.target.value)}
-					placeholder="背景、现象、期望结果……支持 Markdown"
+					placeholder="背景、现象、期望结果……"
 					value={value.description}
 				/>
-			</div>
+			</Field>
 		</>
 	);
 }

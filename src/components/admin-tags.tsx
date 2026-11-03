@@ -25,6 +25,7 @@ import { TAG_COLORS, TAG_NAME_MAX_LENGTH, type TagColor } from "~/domain/tag";
 import { type RouterOutputs, useTRPC } from "~/trpc/react";
 
 import { TagBadge } from "./badges";
+import { PageHeader, Panel } from "./layout";
 
 type Tag = RouterOutputs["tag"]["list"][number];
 
@@ -56,8 +57,10 @@ function TagRow({ tag, all }: { tag: Tag; all: Tag[] }) {
 				>
 					<Input
 						aria-label={`${tag.name} 的新名字`}
+						autoComplete="off"
 						className="h-8 w-40"
 						maxLength={TAG_NAME_MAX_LENGTH}
+						name="name"
 						onChange={(e) => setName(e.target.value)}
 						value={name}
 					/>
@@ -135,13 +138,14 @@ export function AdminTags() {
 	const trpc = useTRPC();
 	const { data = [] } = useQuery(trpc.tag.list.queryOptions());
 	return (
-		<div className="flex flex-col gap-3">
-			<p className="text-muted-foreground text-sm">
-				谁都能在建单时新建标签；改名、合并、删除只有管理员。
-			</p>
-			<div className="rounded-md border">
+		<>
+			<PageHeader
+				description="谁都能在建单时新建标签；改名、合并、删除只有管理员。"
+				title="标签"
+			/>
+			<Panel flush>
 				<Table>
-					<TableHeader>
+					<TableHeader className="bg-muted/40">
 						<TableRow>
 							<TableHead className="w-32">标签</TableHead>
 							<TableHead>改名</TableHead>
@@ -156,7 +160,7 @@ export function AdminTags() {
 						))}
 					</TableBody>
 				</Table>
-			</div>
-		</div>
+			</Panel>
+		</>
 	);
 }

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { PageHeader } from "~/components/layout";
 import { NewItemForm } from "~/components/new-item-form";
 import { ITEM_TYPES, type ItemType } from "~/domain/item";
 import { PRIORITIES, type Priority } from "~/domain/priority";
@@ -14,9 +15,12 @@ export default async function NewItemPage({
 	const priority = PRIORITIES.find((p) => p === params.priority) ?? "P1";
 	const type: ItemType = ITEM_TYPES.find((t) => t === params.type) ?? "ticket";
 	return (
-		<div className="flex flex-col gap-4">
-			<h1 className="font-semibold text-lg">新建</h1>
+		<>
+			<PageHeader
+				description="交给别人的用 Ticket，自己的事用 Todo"
+				title="新建"
+			/>
 			<NewItemForm initialPriority={priority as Priority} initialType={type} />
-		</div>
+		</>
 	);
 }

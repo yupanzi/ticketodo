@@ -73,7 +73,8 @@ export function CommentEditor({
 		<div className="relative flex flex-col gap-2">
 			<Textarea
 				aria-label="评论"
-				className="min-h-20"
+				className="min-h-24 bg-card"
+				name="body"
 				onChange={(e) => {
 					setBody(e.target.value);
 					sync(e.target.value, e.target.selectionStart);
@@ -133,14 +134,13 @@ export function CommentEditor({
 			)}
 			<div className="flex justify-end gap-2">
 				{onCancel && (
-					<Button onClick={onCancel} size="sm" type="button" variant="ghost">
+					<Button onClick={onCancel} type="button" variant="ghost">
 						取消
 					</Button>
 				)}
 				<Button
 					disabled={!body.trim() || pending}
 					onClick={() => void submit()}
-					size="sm"
 					type="button"
 				>
 					{submitLabel}

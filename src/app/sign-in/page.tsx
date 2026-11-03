@@ -1,12 +1,5 @@
 import { redirect } from "next/navigation";
 
-import {
-	Card,
-	CardContent,
-	CardDescription,
-	CardHeader,
-	CardTitle,
-} from "~/components/ui/card";
 import { getSession } from "~/server/auth/session";
 
 import { SignInButton } from "./sign-in-button";
@@ -42,23 +35,30 @@ export default async function SignInPage({
 
 	return (
 		<main className="flex flex-1 items-center justify-center p-6">
-			<Card className="w-full max-w-sm">
-				<CardHeader>
-					<CardTitle className="text-xl">ticketodo</CardTitle>
-					<CardDescription>
-						按重要 × 紧急排优先级的 ticket 与 todo
-					</CardDescription>
-				</CardHeader>
-				<CardContent className="flex flex-col gap-4">
-					{error && (
-						<p className="text-destructive text-sm" role="alert">
-							{ERROR_MESSAGES[error] ??
-								`登录失败（${error}），请重试或联系管理员。`}
-						</p>
-					)}
-					<SignInButton callbackURL={next} />
-				</CardContent>
-			</Card>
+			<div className="flex w-full max-w-sm flex-col gap-6 rounded-xl border bg-card p-8 shadow-sm">
+				<div className="flex flex-col items-center gap-3 text-center">
+					<span className="grid size-12 place-items-center rounded-xl bg-foreground font-bold text-background text-xl">
+						T
+					</span>
+					<h1 className="font-semibold text-2xl tracking-tight">ticketodo</h1>
+					<p className="text-muted-foreground">
+						按「重要 × 紧急」安排工作的 ticket 与 todo
+					</p>
+				</div>
+				{error && (
+					<p
+						className="rounded-lg bg-red-50 px-4 py-3 text-red-700 text-sm ring-1 ring-red-200 ring-inset"
+						role="alert"
+					>
+						{ERROR_MESSAGES[error] ??
+							`登录失败（${error}），请重试或联系管理员。`}
+					</p>
+				)}
+				<SignInButton callbackURL={next} />
+				<p className="text-center text-muted-foreground text-xs">
+					使用公司统一账号（钉钉）登录
+				</p>
+			</div>
 		</main>
 	);
 }

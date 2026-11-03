@@ -4,10 +4,37 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * 字号阶梯（全站唯一来源，shadcn 组件也走它）：最小 13px，正文 15px，中文行高放宽。
+ * ⚠️ 别在组件里写 text-[12px] 之类的字面量绕过它。
+ */
+@theme {
+	--text-xs: 0.8125rem;
+	--text-xs--line-height: 1.25rem;
+	--text-sm: 0.9375rem;
+	--text-sm--line-height: 1.5rem;
+	--text-base: 1rem;
+	--text-base--line-height: 1.625rem;
+	--text-lg: 1.0625rem;
+	--text-lg--line-height: 1.625rem;
+	--text-xl: 1.25rem;
+	--text-xl--line-height: 1.75rem;
+	--text-2xl: 1.5rem;
+	--text-2xl--line-height: 2rem;
+	/* 详情页标题 */
+	--text-title: 1.625rem;
+	--text-title--line-height: 2.25rem;
+}
+
 @theme inline {
 	--color-background: var(--background);
+	--color-canvas: var(--canvas);
 	--color-foreground: var(--foreground);
-	--font-sans: var(--font-geist-sans);
+	/* 西文用 Geist，中文落到各平台的黑体：不写的话中文由浏览器随便挑，字形、字重都对不齐 */
+	--font-sans:
+		var(--font-geist-sans), "PingFang SC", "Hiragino Sans GB",
+		"Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans SC",
+		sans-serif;
 	--font-mono: var(--font-geist-mono);
 	--font-heading: var(--font-sans);
 	--color-sidebar-ring: var(--sidebar-ring);
@@ -50,6 +77,11 @@
 
 :root {
 	--background: oklch(1 0 0);
+	/*
+	 * 页面底色（浅灰），内容放白卡片里：区块靠底色分层。⚠️ 别改 --background 来做底色：
+	 * shadcn 的描边按钮、Tabs 等用它当控件表面色，改了它们在白卡片上全变灰
+	 */
+	--canvas: oklch(0.982 0 0);
 	--foreground: oklch(0.145 0 0);
 	--card: oklch(1 0 0);
 	--card-foreground: oklch(0.145 0 0);
@@ -60,7 +92,7 @@
 	--secondary: oklch(0.97 0 0);
 	--secondary-foreground: oklch(0.205 0 0);
 	--muted: oklch(0.97 0 0);
-	--muted-foreground: oklch(0.556 0 0);
+	--muted-foreground: oklch(0.5 0 0);
 	--accent: oklch(0.97 0 0);
 	--accent-foreground: oklch(0.205 0 0);
 	--destructive: oklch(0.577 0.245 27.325);
@@ -73,7 +105,7 @@
 	--chart-4: oklch(0.371 0 0);
 	--chart-5: oklch(0.269 0 0);
 	--radius: 0.625rem;
-	--sidebar: oklch(0.985 0 0);
+	--sidebar: oklch(1 0 0);
 	--sidebar-foreground: oklch(0.145 0 0);
 	--sidebar-primary: oklch(0.205 0 0);
 	--sidebar-primary-foreground: oklch(0.985 0 0);
@@ -85,6 +117,7 @@
 
 .dark {
 	--background: oklch(0.145 0 0);
+	--canvas: oklch(0.145 0 0);
 	--foreground: oklch(0.985 0 0);
 	--card: oklch(0.205 0 0);
 	--card-foreground: oklch(0.985 0 0);
@@ -122,7 +155,7 @@
 		@apply border-border outline-ring/50;
 	}
 	body {
-		@apply bg-background text-foreground;
+		@apply bg-canvas text-sm text-foreground;
 	}
 	button:not(:disabled),
 	[role="button"]:not(:disabled) {

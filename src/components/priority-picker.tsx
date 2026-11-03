@@ -5,7 +5,7 @@ import { useId } from "react";
 import { PRIORITY_META, type Priority } from "~/domain/priority";
 import { cn } from "~/lib/utils";
 
-import { PRIORITY_TONE } from "./badges";
+import { PriorityBadge } from "./badges";
 
 /** 不让人背 P 级：直接在「重要 × 紧急」的 2×2 里选。原生 radio：方向键切换、读屏都现成 */
 export function PriorityPicker({
@@ -21,9 +21,11 @@ export function PriorityPicker({
 	const cell = (p: Priority) => (
 		<label
 			className={cn(
-				"flex cursor-pointer flex-col items-start rounded-md border px-3 py-2 text-sm transition-colors",
+				"flex cursor-pointer items-center gap-3 rounded-lg border bg-card px-4 py-3 transition-colors",
 				"has-focus-visible:ring-2 has-focus-visible:ring-ring has-disabled:cursor-not-allowed has-disabled:opacity-50",
-				value === p ? PRIORITY_TONE[p] : "hover:bg-muted",
+				value === p
+					? "border-foreground ring-1 ring-foreground"
+					: "hover:border-foreground/30",
 			)}
 			key={p}
 		>
@@ -36,14 +38,17 @@ export function PriorityPicker({
 				type="radio"
 				value={p}
 			/>
-			<span className="font-medium font-mono">{p}</span>
-			<span className="text-muted-foreground text-xs">
-				{PRIORITY_META[p].label} · {PRIORITY_META[p].hint}
+			<PriorityBadge priority={p} />
+			<span className="flex flex-col">
+				<span className="font-medium text-sm">{PRIORITY_META[p].label}</span>
+				<span className="text-muted-foreground text-xs">
+					{PRIORITY_META[p].hint}
+				</span>
 			</span>
 		</label>
 	);
 	return (
-		<fieldset className="grid grid-cols-[auto_1fr_1fr] items-center gap-1.5">
+		<fieldset className="grid grid-cols-[auto_1fr_1fr] items-center gap-2">
 			<legend className="sr-only">优先级（重要 × 紧急）</legend>
 			<span />
 			<span className="text-center text-muted-foreground text-xs">紧急</span>

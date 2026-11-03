@@ -1,6 +1,15 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+	ArrowRightLeft,
+	CircleDot,
+	FilePlus2,
+	Pencil,
+	RotateCcw,
+	Ticket,
+	Trash2,
+} from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -91,7 +100,50 @@ function describe(e: Event): string {
 	}
 }
 
-function CommentBlock({ c, code }: { c: Comment; code: string }) {
+const EVENT_ICON: Record<
+	string,
+	React.ComponentType<{ className?: string }>
+> = {
+	"item.create": FilePlus2,
+	"item.update": Pencil,
+	"item.status": CircleDot,
+	"item.assign": ArrowRightLeft,
+	"item.convert": Ticket,
+	"item.delete": Trash2,
+	"item.restore": RotateCcw,
+};
+
+function Time({ at }: { at: Date }) {
+	return (
+		<time
+			className="shrink-0 text-muted-foreground text-xs"
+			dateTime={at.toISOString()}
+			title={formatDateTime(at)}
+		>
+			{formatRelative(at)}
+		</time>
+	);
+}
+
+function EventRow({ e }: { e: Event }) {
+	const Icon = EVENT_ICON[e.action] ?? CircleDot;
+	return (
+		<li className="relative flex items-center gap-3">
+			<span className="z-10 grid size-8 shrink-0 place-items-center rounded-full border bg-card text-muted-foreground">
+				<Icon className="size-4" />
+			</span>
+			<p className="min-w-0 flex-1 text-muted-foreground text-sm">
+				<span className="font-medium text-foreground">
+					{e.actorName ?? "系统"}
+				</span>{" "}
+				{describe(e)}
+			</p>
+			<Time at={e.at} />
+		</li>
+	);
+}
+
+function CommentRow({ c, code }: { c: Comment; code: string }) {
 	const trpc = useTRPC();
 	const qc = useQueryClient();
 	const [editing, setEditing] = useState(false);
@@ -112,23 +164,18 @@ function CommentBlock({ c, code }: { c: Comment; code: string }) {
 			onError: (err) => toast.error(err.message),
 		}),
 	);
+	const edited =
+		!c.deletedAt && c.updatedAt.getTime() - c.createdAt.getTime() > 1000;
 	return (
-		<li className="flex gap-3">
-			<UserAvatar className="mt-0.5 size-7" user={c.author} />
-			<div className="flex min-w-0 flex-1 flex-col gap-1 rounded-md border px-3 py-2">
-				<div className="flex items-center gap-2 text-xs">
+		<li className="relative flex gap-3">
+			<UserAvatar className="z-10 size-8 ring-4 ring-card" user={c.author} />
+			<div className="min-w-0 flex-1 rounded-lg border bg-card">
+				<div className="flex items-center gap-2 border-b bg-muted/40 px-4 py-2">
 					<span className="font-medium text-sm">{c.author.name}</span>
-					<time
-						className="text-muted-foreground"
-						dateTime={c.createdAt.toISOString()}
-						title={formatDateTime(c.createdAt)}
-					>
-						{formatRelative(c.createdAt)}
-					</time>
-					{c.updatedAt.getTime() - c.createdAt.getTime() > 1000 &&
-						!c.deletedAt && (
-							<span className="text-muted-foreground">（已编辑）</span>
-						)}
+					<Time at={c.createdAt} />
+					{edited && (
+						<span className="text-muted-foreground text-xs">已编辑</span>
+					)}
 					<span className="ml-auto flex gap-1">
 						{c.canEdit && !editing && (
 							<Button
@@ -153,25 +200,27 @@ function CommentBlock({ c, code }: { c: Comment; code: string }) {
 						)}
 					</span>
 				</div>
-				{c.deletedAt || c.body === null ? (
-					<p className="text-muted-foreground text-sm italic">该评论已删除</p>
-				) : editing ? (
-					<CommentEditor
-						initial={c.body}
-						onCancel={() => setEditing(false)}
-						onSubmit={(body) => edit.mutateAsync({ id: c.id, body })}
-						pending={edit.isPending}
-						submitLabel="保存"
-					/>
-				) : (
-					<Markdown>{c.body}</Markdown>
-				)}
+				<div className="px-4 py-3">
+					{c.deletedAt || c.body === null ? (
+						<p className="text-muted-foreground italic">该评论已删除</p>
+					) : editing ? (
+						<CommentEditor
+							initial={c.body}
+							onCancel={() => setEditing(false)}
+							onSubmit={(body) => edit.mutateAsync({ id: c.id, body })}
+							pending={edit.isPending}
+							submitLabel="保存"
+						/>
+					) : (
+						<Markdown>{c.body}</Markdown>
+					)}
+				</div>
 			</div>
 		</li>
 	);
 }
 
-/** 时间线（审计里的字段级变更）与评论按时间合成一条流 */
+/** 时间线（审计里的字段级变更）与评论按时间合成一条流；竖线把节点串起来 */
 export function ItemActivity({
 	code,
 	canComment,
@@ -194,7 +243,7 @@ export function ItemActivity({
 	);
 
 	if (events.isLoading || comments.isLoading)
-		return <Skeleton className="h-32" />;
+		return <Skeleton className="m-5 h-32" />;
 
 	const stream = [
 		...(events.data ?? []).map((e) => ({ at: e.at, key: `e${e.id}`, e })),
@@ -206,38 +255,24 @@ export function ItemActivity({
 	].sort((a, b) => a.at.getTime() - b.at.getTime());
 
 	return (
-		<section className="flex flex-col gap-4">
-			<h2 className="font-medium text-sm">动态</h2>
-			<ol className="flex flex-col gap-3">
+		<div>
+			<ol className="relative flex flex-col gap-4 p-5 before:absolute before:top-8 before:bottom-8 before:left-[35px] before:w-px before:bg-border">
 				{stream.map((s) =>
 					"c" in s ? (
-						<CommentBlock c={s.c} code={code} key={s.key} />
+						<CommentRow c={s.c} code={code} key={s.key} />
 					) : (
-						<li
-							className="flex items-baseline gap-2 pl-10 text-muted-foreground text-xs"
-							key={s.key}
-						>
-							<span className="font-medium text-foreground">
-								{s.e.actorName ?? "系统"}
-							</span>
-							<span>{describe(s.e)}</span>
-							<time
-								className="ml-auto shrink-0"
-								dateTime={s.e.at.toISOString()}
-								title={formatDateTime(s.e.at)}
-							>
-								{formatRelative(s.e.at)}
-							</time>
-						</li>
+						<EventRow e={s.e} key={s.key} />
 					),
 				)}
 			</ol>
 			{canComment && (
-				<CommentEditor
-					onSubmit={(body) => add.mutateAsync({ code, body })}
-					pending={add.isPending}
-				/>
+				<div className="border-t bg-muted/30 p-5">
+					<CommentEditor
+						onSubmit={(body) => add.mutateAsync({ code, body })}
+						pending={add.isPending}
+					/>
+				</div>
 			)}
-		</section>
+		</div>
 	);
 }

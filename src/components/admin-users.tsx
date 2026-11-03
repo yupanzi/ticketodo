@@ -3,7 +3,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
-import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import {
 	Table,
@@ -15,7 +14,8 @@ import {
 } from "~/components/ui/table";
 import { formatDateTime } from "~/lib/format";
 import { useTRPC } from "~/trpc/react";
-
+import { Chip } from "./chip";
+import { PageHeader, Panel } from "./layout";
 import { useMe } from "./me-context";
 import { UserChip } from "./user-avatar";
 
@@ -32,13 +32,14 @@ export function AdminUsers() {
 		}),
 	);
 	return (
-		<div className="flex flex-col gap-3">
-			<p className="text-muted-foreground text-sm">
-				登录过 ticketodo 的人。授予与撤销都进审计；至少保留一名管理员。
-			</p>
-			<div className="rounded-md border">
+		<>
+			<PageHeader
+				description="登录过 ticketodo 的人。授予与撤销都进审计；至少保留一名管理员。"
+				title="成员与管理员"
+			/>
+			<Panel flush>
 				<Table>
-					<TableHeader>
+					<TableHeader className="bg-muted/40">
 						<TableRow>
 							<TableHead>姓名</TableHead>
 							<TableHead>邮箱</TableHead>
@@ -57,9 +58,9 @@ export function AdminUsers() {
 									{u.email ?? "—"}
 								</TableCell>
 								<TableCell>
-									<Badge variant={u.role === "admin" ? "default" : "secondary"}>
+									<Chip tone={u.role === "admin" ? "ink" : "outline"}>
 										{u.role === "admin" ? "管理员" : "成员"}
-									</Badge>
+									</Chip>
 								</TableCell>
 								<TableCell className="text-muted-foreground text-xs">
 									{formatDateTime(u.createdAt)}
@@ -76,7 +77,7 @@ export function AdminUsers() {
 												setRole.mutate({ userId: u.id, role });
 										}}
 										size="sm"
-										variant={u.role === "admin" ? "outline" : "default"}
+										variant="outline"
 									>
 										{u.role === "admin" ? "撤销管理员" : "设为管理员"}
 									</Button>
@@ -85,7 +86,7 @@ export function AdminUsers() {
 						))}
 					</TableBody>
 				</Table>
-			</div>
-		</div>
+			</Panel>
+		</>
 	);
 }

@@ -13,14 +13,23 @@ import {
 } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { GripVertical, Plus } from "lucide-react";
+import {
+	AlarmClock,
+	CalendarCheck,
+	CircleCheckBig,
+	GripVertical,
+	Inbox,
+	ListChecks,
+	Plus,
+} from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "~/components/ui/tabs";
-import { todayInAppTz } from "~/domain/due";
+import { dueState, todayInAppTz } from "~/domain/due";
 import { canEdit } from "~/domain/policy";
 import { PRIORITIES, PRIORITY_META, type Priority } from "~/domain/priority";
 import { cn } from "~/lib/utils";
@@ -28,13 +37,14 @@ import { type RouterOutputs, useTRPC } from "~/trpc/react";
 
 import {
 	DueBadge,
-	PRIORITY_TONE,
+	PriorityBadge,
 	StatusBadge,
 	TagBadge,
-	TypeBadge,
+	TodoBadge,
 } from "./badges";
-import { useMe } from "./me-context";
-import { UserChip } from "./user-avatar";
+import { EmptyState, PageHeader } from "./layout";
+import { type Me, useMe } from "./me-context";
+import { UserAvatar } from "./user-avatar";
 
 type BoardItem = RouterOutputs["item"]["board"][number];
 type Scope = "mine" | "reported" | "all";
@@ -44,6 +54,97 @@ const SCOPES: { value: Scope; label: string }[] = [
 	{ value: "reported", label: "我提的" },
 	{ value: "all", label: "全部" },
 ];
+
+// ---------- 今日概览 ----------
+
+function StatCard({
+	label,
+	value,
+	href,
+	icon: Icon,
+	alert,
+}: {
+	label: string;
+	value: number | undefined;
+	href: string;
+	icon: React.ComponentType<{ className?: string }>;
+	/** 有数时的告警色；没有则为中性 */
+	alert?: "red" | "amber";
+}) {
+	const hot = (value ?? 0) > 0;
+	return (
+		<Link
+			className={cn(
+				"group flex items-center gap-4 rounded-xl border bg-card px-4 py-3.5 shadow-xs transition-colors hover:border-foreground/25 sm:px-5 sm:py-4",
+				hot && alert === "red" && "border-red-200 bg-red-50/60",
+				hot && alert === "amber" && "border-amber-200 bg-amber-50/60",
+			)}
+			href={href}
+		>
+			<span
+				className={cn(
+					// 窄屏两列放不下图标 + 文字：只留数字
+					"hidden size-10 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground sm:grid",
+					hot && alert === "red" && "bg-red-600 text-white",
+					hot && alert === "amber" && "bg-amber-500 text-white",
+					hot && !alert && "bg-foreground text-background",
+				)}
+			>
+				<Icon className="size-5" />
+			</span>
+			<span className="flex flex-col">
+				<span className="text-muted-foreground text-sm">{label}</span>
+				<span
+					className={cn(
+						"font-semibold text-2xl tabular-nums",
+						!hot && "text-muted-foreground/70",
+						hot && alert === "red" && "text-red-700",
+						hot && alert === "amber" && "text-amber-800",
+					)}
+				>
+					{value ?? "–"}
+				</span>
+			</span>
+		</Link>
+	);
+}
+
+function Summary() {
+	const trpc = useTRPC();
+	const { data } = useQuery(trpc.item.summary.queryOptions());
+	return (
+		<div className="mb-6 grid grid-cols-2 gap-4 xl:grid-cols-4">
+			<StatCard
+				alert="red"
+				href="/items?mine=assigned&overdue=1"
+				icon={AlarmClock}
+				label="已逾期"
+				value={data?.overdue}
+			/>
+			<StatCard
+				alert="amber"
+				href="/items?mine=assigned&due=today"
+				icon={CalendarCheck}
+				label="今天到期"
+				value={data?.dueToday}
+			/>
+			<StatCard
+				href="/items?mine=reported&status=resolved"
+				icon={CircleCheckBig}
+				label="待我确认关闭"
+				value={data?.awaitingConfirmation}
+			/>
+			<StatCard
+				href="/items?mine=assigned&status=open,in_progress"
+				icon={ListChecks}
+				label="我负责的进行中"
+				value={data?.active}
+			/>
+		</div>
+	);
+}
+
+// ---------- 卡片 ----------
 
 function refOf(i: BoardItem) {
 	return {
@@ -55,16 +156,26 @@ function refOf(i: BoardItem) {
 	};
 }
 
+/** 卡片上只显示「另一方」：我负责的看是谁提的，我提的看是谁在做，自己的事不显示人 */
+function counterpart(item: BoardItem, me: Me) {
+	if (item.assignee.id !== me.id) return { user: item.assignee, role: "负责" };
+	if (item.reporter.id !== me.id) return { user: item.reporter, role: "提单" };
+	return null;
+}
+
 function ItemCard({ item, today }: { item: BoardItem; today: string }) {
 	const me = useMe();
 	const draggable = canEdit(me, refOf(item));
 	const { attributes, listeners, setNodeRef, transform, isDragging } =
 		useDraggable({ id: item.code, disabled: !draggable });
+	const overdue = dueState(item.dueDate, item.status, today) === "overdue";
+	const other = counterpart(item, me);
 	return (
 		<li
 			className={cn(
-				"group flex gap-1 rounded-md border bg-card p-2 shadow-xs",
-				isDragging && "z-10 opacity-80 shadow-lg",
+				"group relative flex gap-1.5 rounded-lg border bg-card py-3 pr-4 pl-2 transition-shadow hover:border-foreground/20 hover:shadow-sm",
+				overdue && "border-l-[3px] border-l-red-500",
+				isDragging && "z-10 shadow-lg ring-2 ring-foreground/10",
 			)}
 			ref={setNodeRef}
 			style={{ transform: CSS.Translate.toString(transform) }}
@@ -72,7 +183,7 @@ function ItemCard({ item, today }: { item: BoardItem; today: string }) {
 			{draggable ? (
 				<button
 					aria-label={`拖动 ${item.code} 改优先级`}
-					className="mt-0.5 cursor-grab text-muted-foreground opacity-40 group-hover:opacity-100"
+					className="mt-0.5 h-fit cursor-grab rounded text-muted-foreground/40 hover:text-foreground group-hover:text-muted-foreground"
 					type="button"
 					{...attributes}
 					{...listeners}
@@ -80,29 +191,42 @@ function ItemCard({ item, today }: { item: BoardItem; today: string }) {
 					<GripVertical className="size-4" />
 				</button>
 			) : (
-				<span className="w-4" />
+				<span className="w-4 shrink-0" />
 			)}
 			<Link
-				className="flex min-w-0 flex-1 flex-col gap-1.5"
+				className="flex min-w-0 flex-1 flex-col gap-2.5"
 				href={`/items/${item.code}`}
 			>
-				<div className="flex items-center gap-1.5 text-muted-foreground text-xs">
-					<span className="font-mono">{item.code}</span>
-					<TypeBadge type={item.type} />
-					{item.status !== "open" && <StatusBadge status={item.status} />}
-				</div>
-				<p className="line-clamp-2 font-medium text-sm">{item.title}</p>
-				<div className="flex flex-wrap items-center gap-1.5 text-xs">
-					<UserChip user={item.assignee} />
+				<p className="line-clamp-2 font-semibold text-sm leading-snug">
+					{item.title}
+				</p>
+				<div className="flex flex-wrap items-center gap-1.5">
 					<DueBadge dueDate={item.dueDate} status={item.status} today={today} />
-					{item.tags.map((t) => (
+					{item.status !== "open" && <StatusBadge status={item.status} />}
+					{item.type === "todo" && <TodoBadge />}
+					{item.tags.slice(0, 2).map((t) => (
 						<TagBadge color={t.color} key={t.id} name={t.name} />
 					))}
+				</div>
+				<div className="flex items-center justify-between gap-2 text-muted-foreground text-xs">
+					{other ? (
+						<span className="inline-flex min-w-0 items-center gap-1.5">
+							<UserAvatar className="size-5" user={other.user} />
+							<span className="truncate">
+								{other.user.name} {other.role}
+							</span>
+						</span>
+					) : (
+						<span>我自己的</span>
+					)}
+					<span className="shrink-0 font-mono">{item.code}</span>
 				</div>
 			</Link>
 		</li>
 	);
 }
+
+// ---------- 象限 ----------
 
 function Quadrant({
 	priority,
@@ -115,42 +239,48 @@ function Quadrant({
 }) {
 	const { setNodeRef, isOver } = useDroppable({ id: priority });
 	const meta = PRIORITY_META[priority];
+	// P0 是全板唯一带色的面板：一眼先看到它
+	const hot = priority === "P0";
 	return (
 		<section
 			aria-label={`${priority} ${meta.label}`}
 			className={cn(
-				"flex min-h-48 flex-col gap-2 rounded-lg border p-3 transition-colors",
-				isOver && "ring-2 ring-primary/40",
+				"flex min-h-64 flex-col overflow-hidden rounded-xl border bg-card shadow-xs transition-shadow",
+				hot && "border-red-200",
+				isOver && "ring-2 ring-foreground/30",
 			)}
 			ref={setNodeRef}
 		>
-			<header className="flex items-center gap-2">
-				<span
-					className={cn(
-						"rounded border px-1.5 font-mono font-semibold text-xs",
-						PRIORITY_TONE[priority],
-					)}
-				>
-					{priority}
-				</span>
-				<span className="font-medium text-sm">{meta.label}</span>
-				<span className="text-muted-foreground text-xs">{meta.hint}</span>
-				<span className="ml-auto text-muted-foreground text-xs">
+			<header
+				className={cn(
+					"flex items-center gap-3 border-b px-4 py-3",
+					hot && "border-red-100 bg-red-50/70",
+				)}
+			>
+				<PriorityBadge priority={priority} />
+				<h2 className="font-semibold text-lg">{meta.label}</h2>
+				<span className="text-muted-foreground text-sm">{meta.hint}</span>
+				<span className="ml-auto rounded-full bg-muted px-2 font-medium text-muted-foreground text-xs tabular-nums">
 					{items.length}
 				</span>
-				<Link
-					aria-label={`在 ${priority} 新建`}
-					className="text-muted-foreground hover:text-foreground"
-					href={`/items/new?priority=${priority}`}
-				>
-					<Plus className="size-4" />
-				</Link>
+				<Button asChild size="icon-sm" variant="ghost">
+					<Link
+						aria-label={`在 ${priority} 新建`}
+						href={`/items/new?priority=${priority}`}
+					>
+						<Plus />
+					</Link>
+				</Button>
 			</header>
-			<ul className="flex flex-col gap-2">
-				{items.map((i) => (
-					<ItemCard item={i} key={i.code} today={today} />
-				))}
-			</ul>
+			{items.length > 0 ? (
+				<ul className="flex flex-col gap-2.5 p-3">
+					{items.map((i) => (
+						<ItemCard item={i} key={i.code} today={today} />
+					))}
+				</ul>
+			) : (
+				<EmptyState className="flex-1" icon={<Inbox />} title="这里没有事项" />
+			)}
 		</section>
 	);
 }
@@ -199,7 +329,10 @@ export function QuadrantBoard() {
 				toast.error(err.message);
 			},
 			onSettled: () =>
-				qc.invalidateQueries({ queryKey: trpc.item.board.pathKey() }),
+				Promise.all([
+					qc.invalidateQueries({ queryKey: trpc.item.board.pathKey() }),
+					qc.invalidateQueries({ queryKey: trpc.item.summary.queryKey() }),
+				]),
 		}),
 	);
 
@@ -217,67 +350,50 @@ export function QuadrantBoard() {
 	};
 
 	return (
-		<div className="flex flex-col gap-4">
-			<div className="flex flex-wrap items-center justify-between gap-2">
-				<h1 className="font-semibold text-lg">四象限</h1>
-				<Tabs onValueChange={(v) => setScope(v as Scope)} value={scope}>
-					<TabsList>
-						{SCOPES.map((s) => (
-							<TabsTrigger key={s.value} value={s.value}>
-								{s.label}
-							</TabsTrigger>
+		<>
+			<PageHeader
+				actions={
+					<Tabs onValueChange={(v) => setScope(v as Scope)} value={scope}>
+						<TabsList>
+							{SCOPES.map((s) => (
+								<TabsTrigger key={s.value} value={s.value}>
+									{s.label}
+								</TabsTrigger>
+							))}
+						</TabsList>
+					</Tabs>
+				}
+				description="按「重要 × 紧急」安排手上的事；把卡片拖到别的象限即可调整优先级"
+				title="四象限"
+			/>
+			<Summary />
+			{isLoading ? (
+				<div className="grid gap-4 lg:grid-cols-2">
+					{PRIORITIES.map((p) => (
+						<Skeleton className="h-64 rounded-xl" key={p} />
+					))}
+				</div>
+			) : (
+				<DndContext
+					accessibility={{
+						announcements: ANNOUNCEMENTS,
+						screenReaderInstructions: SCREEN_READER,
+					}}
+					onDragEnd={onDragEnd}
+					sensors={sensors}
+				>
+					<div className="grid gap-4 lg:grid-cols-2">
+						{PRIORITIES.map((p) => (
+							<Quadrant
+								items={(data ?? []).filter((i) => i.priority === p)}
+								key={p}
+								priority={p}
+								today={today}
+							/>
 						))}
-					</TabsList>
-				</Tabs>
-			</div>
-			<div className="grid grid-cols-[auto_1fr_1fr] gap-3">
-				<span />
-				<p className="text-center font-medium text-muted-foreground text-xs">
-					紧急
-				</p>
-				<p className="text-center font-medium text-muted-foreground text-xs">
-					不紧急
-				</p>
-				{isLoading ? (
-					<>
-						<p className="self-center text-muted-foreground text-xs [writing-mode:vertical-rl]">
-							重要
-						</p>
-						<Skeleton className="h-48" />
-						<Skeleton className="h-48" />
-						<p className="self-center text-muted-foreground text-xs [writing-mode:vertical-rl]">
-							不重要
-						</p>
-						<Skeleton className="h-48" />
-						<Skeleton className="h-48" />
-					</>
-				) : (
-					<DndContext
-						accessibility={{
-							announcements: ANNOUNCEMENTS,
-							screenReaderInstructions: SCREEN_READER,
-						}}
-						onDragEnd={onDragEnd}
-						sensors={sensors}
-					>
-						{(["重要", "不重要"] as const).map((row, r) => (
-							<div className="contents" key={row}>
-								<p className="self-center font-medium text-muted-foreground text-xs [writing-mode:vertical-rl]">
-									{row}
-								</p>
-								{PRIORITIES.slice(r * 2, r * 2 + 2).map((p) => (
-									<Quadrant
-										items={(data ?? []).filter((i) => i.priority === p)}
-										key={p}
-										priority={p}
-										today={today}
-									/>
-								))}
-							</div>
-						))}
-					</DndContext>
-				)}
-			</div>
-		</div>
+					</div>
+				</DndContext>
+			)}
+		</>
 	);
 }
