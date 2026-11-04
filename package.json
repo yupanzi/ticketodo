@@ -1,6 +1,6 @@
 {
 	"name": "ticketodo",
-	"version": "0.0.0",
+	"version": "0.1.0",
 	"description": "企业内部 ticket 与 todo：重要×紧急四象限（P0–P3），authentik 登录，带管理员与审计",
 	"license": "MIT",
 	"repository": {
