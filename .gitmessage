@@ -13,4 +13,4 @@
 # ⚠ 0.x 期间别用 ! / BREAKING CHANGE：会直接跳到 1.0.0
 # 其余 type 不发版：docs style refactor test build ci chore
 # ── 常用 scope（自由，非强制）────────────────────────
-# item comment tag notify admin auth audit db ui api chart docker deps
+# item comment tag notify admin auth audit db ui api deploy docker deps

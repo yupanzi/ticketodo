@@ -1,0 +1,118 @@
+# 部署起点：复制成 values.prod.yaml 后填写，步骤见 README「部署」。chart 是通用的 dockerhelm
+# （oci://ghcr.io/yupanzi/charts/dockerhelm），字段含义见它的 values.yaml，各环境变量的含义见 .env.example；
+# 这里只写 ticketodo 的取舍。
+# ⚠️ 敏感值一个都不填在这里：放在预先建好的 Secret ticketodo-app 里（DATABASE_URL、BETTER_AUTH_SECRET、
+# AUTHENTIK_CLIENT_SECRET 三个键）。
+
+# 资源名就叫 ticketodo，不留 dockerhelm 的 <release>-dockerhelm
+nameOverride: ticketodo
+fullnameOverride: ticketodo
+
+image:
+  # 发版推的镜像（ci.yml 的 IMAGE）。⚠️ 由仓库路径派生，仓库改名 / 转移后这里要手改
+  repository: ghcr.io/yupanzi/ticketodo
+  # 部署时 --set image.tag=X.Y.Z。别用 latest：各节点跑的版本会不一样。占位值拉不到镜像，忘了覆盖会明确失败
+  tag: X.Y.Z
+
+workload:
+  # 无状态（会话、数据都在 PG），可水平扩。⚠️ better-auth 的登录限流在进程内存里，按副本各算各的
+  replicas: 2
+
+pod:
+  annotations:
+    # ⚠️ 改了 Secret 必须 bump（任意字符串）：env 在启动时注入，pod template 不变就不滚动，常驻进程
+    # 还拿着旧值。迁移与 cron 每次都是新 Pod，不受影响
+    ticketodo.io/secret-version: "2026-11-03"
+
+container:
+  name: server
+  # 镜像的 CMD 是报错退出的占位，入口必须显式给
+  command: [node, server.js]
+  ports:
+    # 与 Dockerfile 的 PORT 一致；探针与 Service 按名字引用它
+    - { name: http, containerPort: 3000 }
+  # 凭证按 Pod 给：web 三个，迁移与 cron 只有 DATABASE_URL。别换成 envFrom 整个 Secret，会把会话密钥与
+  # authentik client secret 发给用不到它们的 Pod。LOG_LEVEL 不给即 info
+  env:
+    # 理由见 Dockerfile 的 HOSTNAME
+    - name: HOSTNAME
+      value: 0.0.0.0
+    # 从 ingress 派生，再填一遍只会制造配错机会。https 时信任代理头的前提见 README「部署」
+    - name: BETTER_AUTH_URL
+      value: "https://{{ .Values.ingress.hostname }}"
+    # discovery 地址与 client id 不是机密（client secret 在 Secret 里）
+    - name: AUTHENTIK_DISCOVERY_URL
+      value: https://sso.example.com/application/o/ticketodo/.well-known/openid-configuration
+    - name: AUTHENTIK_CLIENT_ID
+      value: ticketodo
+    - name: BOOTSTRAP_ADMIN_EMAILS
+      value: admin@example.com
+    - &database-url
+      name: DATABASE_URL
+      valueFrom: { secretKeyRef: { name: ticketodo-app, key: DATABASE_URL } }
+    - name: BETTER_AUTH_SECRET
+      valueFrom:
+        { secretKeyRef: { name: ticketodo-app, key: BETTER_AUTH_SECRET } }
+    - name: AUTHENTIK_CLIENT_SECRET
+      valueFrom:
+        { secretKeyRef: { name: ticketodo-app, key: AUTHENTIK_CLIENT_SECRET } }
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 1Gi }
+  readinessProbe:
+    httpGet: { path: /api/healthz, port: http }
+    initialDelaySeconds: 5
+    periodSeconds: 10
+  livenessProbe:
+    httpGet: { path: /api/healthz, port: http }
+    initialDelaySeconds: 20
+    periodSeconds: 30
+
+service:
+  enabled: true
+
+ingress:
+  enabled: true
+  className: nginx
+  hostname: &host ticketodo.example.com
+  tls:
+    - hosts: [*host]
+      secretName: ticketodo-tls
+
+jobs:
+  # 失败时 Helm 中止整次升级，不会出现「迁移失败但应用已滚上去」
+  migrate:
+    annotations:
+      helm.sh/hook: pre-install,pre-upgrade
+      helm.sh/hook-weight: "-5"
+    container:
+      command: [node, dist/bin/migrate.cjs]
+      env: [*database-url]
+      resources: &task-resources
+        requests: { cpu: 50m, memory: 128Mi }
+        limits: { memory: 512Mi }
+    spec:
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 3600
+
+cronJobs:
+  # 到期提醒：明天到期 / 已逾期的单子给负责人发站内通知。重跑幂等，漏跑下次补上
+  dueremind:
+    spec:
+      schedule: "0 9 * * *"
+      # k8s ≥ 1.27；更老的集群删掉这行，schedule 改成 UTC（'0 1 * * *'）
+      timeZone: Asia/Shanghai
+      startingDeadlineSeconds: 600
+      failedJobsHistoryLimit: 3
+    jobSpec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 86400
+      # 节点驱逐、抢占等中断不计入 backoffLimit，照样起新 Pod
+      podFailurePolicy:
+        rules:
+          - action: Ignore
+            onPodConditions: [{ type: DisruptionTarget }]
+    container:
+      command: [node, dist/bin/cron/dueremind.cjs]
+      env: [*database-url]
+      resources: *task-resources

@@ -1,6 +1,6 @@
-# check：lint + 类型 + 测试（含需要真实 Postgres 的集成测试）+ 无 env 构建 + chart lint。
+# check：lint + 类型 + 测试（含需要真实 Postgres 的集成测试）+ 无 env 构建 + 部署 values 校验。
 # build：只在 PR 上验证镜像能构建，不推。
-# release：push 到默认分支、check 过了才跑，版本号、镜像与 chart 都由它出。deploy 不进 CI（不放集群凭证）。
+# release：push 到默认分支、check 过了才跑，版本号与镜像都由它出。deploy 不进 CI（不放集群凭证）。
 name: ci
 
 on:
@@ -38,6 +38,8 @@ jobs:
       TEST_DATABASE_URL: postgresql://postgres:ci@localhost:5432/ticketodo
     steps:
       - uses: actions/checkout@v4
+      # 部署 values 对着通用 chart dockerhelm 渲染一遍（它的 schema 拒掉写错的字段）；只要 checkout，放最前面早失败
+      - run: helm template ticketodo oci://ghcr.io/yupanzi/charts/dockerhelm --version 1.1.0 -f deploy/values.example.yaml > /dev/null
       # 必须先于 setup-node（cache: pnpm 要找到可执行文件）；版本读 packageManager。
       # pnpm 12 要 6.1.0 起（更早的跳过它的 postinstall，跑到的是占位脚本）；钉确切版本，
       # 浮动的 @v6 不保证跟上
@@ -61,8 +63,6 @@ jobs:
       # 跑一次打包后的迁移入口：bundle 能不能在没有 node_modules 依赖的情况下跑起来
       - run: node dist/bin/migrate.cjs
 
-      - run: helm lint charts/ticketodo -f charts/ticketodo/values.example.yaml
-
   build:
     if: github.event_name == 'pull_request'
     needs: check
@@ -80,9 +80,8 @@ jobs:
           cache-to: type=gha,mode=max
 
   # semantic-release 按 Conventional Commits 算版本（.releaserc.json），只有 feat / fix / perf /
-  # BREAKING 才发版，其余提交这一步空转。镜像与 chart 在它的 publishCmd 里推，别拆成「打 tag 触发另一个
+  # BREAKING 才发版，其余提交这一步空转。镜像在它的 publishCmd 里推，别拆成「打 tag 触发另一个
   # workflow」：GITHUB_TOKEN 打的 tag 不触发 workflow，那条链默认是断的。
-  # publishCmd 先镜像后 chart：chart 一出现在 OCI 源里就可能被装，它指的镜像得已经在。
   release:
     if: github.event_name == 'push' && github.ref_name == github.event.repository.default_branch
     needs: check
@@ -106,18 +105,14 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - uses: docker/setup-buildx-action@v3
-      # helm push 也用这份凭证（Helm 回落读 Docker 的），别再加 helm registry login
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # publishCmd 从这两个变量取坐标；GHCR 只接受小写路径。IMAGE 也写在 values.yaml 的 image.repository 里。
-      # ⚠️ CHART_REPO 别改成 owner 根：helm push 以 chart 名作最后一段，会与镜像撞路径、盖掉同版本号的镜像
-      - run: |
-          echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
-          echo "CHART_REPO=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/charts" >> "$GITHUB_ENV"
+      # publishCmd 从它取坐标；GHCR 只接受小写路径。IMAGE 也写在 deploy/values.example.yaml 的 image.repository 里
+      - run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
 
       - run: pnpm exec semantic-release
         env:

@@ -9,7 +9,6 @@
 	"files": {
 		"ignoreUnknown": true,
 		// components/ui 是 shadcn 生成的，改了下次 `shadcn add` 会覆盖；drizzle/meta 是 drizzle-kit 产物。
-		// charts 归 helm lint：模板不是合法 YAML，且 release-version.mjs 按固定格式改写 Chart.yaml；
 		// pnpm-workspace.yaml 归 pnpm：它每次改写都用自己的引号风格；
 		// Markdown 不归它：CHANGELOG.md 由 semantic-release 生成、AGENTS.md 由 next dev 写
 		"includes": [
@@ -17,7 +16,6 @@
 			"!src/components/ui",
 			"!drizzle/meta",
 			"!next-env.d.ts",
-			"!charts",
 			"!pnpm-workspace.yaml",
 			"!**/*.md"
 		]

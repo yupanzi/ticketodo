@@ -1,7 +1,7 @@
 # ticketodo
 
 企业内部的 ticket 与 todo：按「重要 × 紧急」四象限排优先级（P0–P3），只用企业账号（authentik，OIDC）
-登录，带管理员、站内通知与只追加的审计。单镜像 + Helm chart 部署。
+登录，带管理员、站内通知与只追加的审计。单镜像，用通用 Helm chart [dockerhelm](https://github.com/yupanzi/dockerhelm) 部署。
 
 ## 规则一览
 
@@ -109,32 +109,34 @@ stdout 一行一个 JSON（pino），级别是字符串、时间 ISO。每个 tR
 
 ## 部署（K8s / Helm）
 
+本仓库只出镜像，K8s 资源由通用 chart dockerhelm 按 `deploy/values.example.yaml` 生成。
+
 ```bash
-# 1. 先建 Secret（chart 不自建，且必须先于 chart 存在：迁移 hook 要用）
+# 1. 先建 Secret（values 里不放敏感值，且必须先于部署存在：迁移 hook 要用）
 kubectl create namespace ticketodo
 kubectl create secret generic ticketodo-app -n ticketodo \
   --from-literal=DATABASE_URL='postgresql://...' \
   --from-literal=BETTER_AUTH_SECRET="$(openssl rand -base64 32)" \
   --from-literal=AUTHENTIK_CLIENT_SECRET='...'
 
-# 2. 填 values（ingress.host 与 authentik 两项）后部署发版号 X.Y.Z 的 chart
-cp charts/ticketodo/values.example.yaml values.prod.yaml
-helm upgrade --install ticketodo oci://ghcr.io/yupanzi/charts/ticketodo --version X.Y.Z \
-  -n ticketodo -f values.prod.yaml --wait --timeout 10m
+# 2. 填 values（ingress.hostname 与 authentik 两项）后部署发版号 X.Y.Z 的镜像
+cp deploy/values.example.yaml values.prod.yaml
+helm upgrade --install ticketodo oci://ghcr.io/yupanzi/charts/dockerhelm --version 1.1.0 \
+  -n ticketodo -f values.prod.yaml --set image.tag=X.Y.Z --wait --timeout 10m
 ```
 
-部署未发版的本地改动时，把 OCI 地址换成 `./charts/ticketodo`、去掉 `--version`。⚠️ GHCR 的 package
-不继承仓库的公开可见性：镜像与 chart 第一次发布后要到 GitHub 的 package 设置里改成 Public。
+dockerhelm 的版本与 ticketodo 的发版号无关，镜像版本只由 `image.tag` 决定。⚠️ GHCR 的 package 不继承仓库的公开可见性：镜像第一次发布后要到 GitHub 的 package
+设置里改成 Public。
 
-产出：Deployment（2 副本）+ Service + Ingress + 迁移 Job（`pre-install,pre-upgrade` hook，失败则整次
-升级中止）+ CronJob `dueremind`。需要 Kubernetes ≥ 1.27（CronJob `timeZone`；更老的集群删掉
-`timeZone` 并把 schedule 改成 UTC）。
+产出：Deployment（2 副本，带 PDB 与 preStop 摘流）+ Service + Ingress + 迁移 Job（`pre-install,pre-upgrade`
+hook，失败则整次升级中止）+ CronJob `dueremind`。需要 Kubernetes ≥ 1.27（CronJob `timeZone`；更老的
+集群删掉 `timeZone` 并把 schedule 改成 UTC）。
 
-- `BETTER_AUTH_URL` 从 `ingress.host` 派生；它是 https 时才信任 `X-Forwarded-For` / `X-Request-ID`。
+- `BETTER_AUTH_URL` 从 `ingress.hostname` 派生；它是 https 时才信任 `X-Forwarded-For` / `X-Request-ID`。
   ⚠️ 前提是代理覆盖（而非透传）这些头，且不可绕过代理直连。
 - 每个 Pod 只拿自己用得到的凭证：web 三个，迁移与 cron 只有 `DATABASE_URL`。
-- ⚠️ **改了 Secret 必须 bump `values.secretVersion`**，否则常驻进程还拿着旧值。⚠️ 换
-  `BETTER_AUTH_SECRET` 会让全员掉线，已加密存储的 OAuth token 也解不开（不影响再次登录）。
+- ⚠️ **改了 Secret 必须 bump `pod.annotations` 里的 `ticketodo.io/secret-version`**，否则常驻进程还拿着
+  旧值。⚠️ 换 `BETTER_AUTH_SECRET` 会让全员掉线，已加密存储的 OAuth token 也解不开（不影响再次登录）。
 - `DATABASE_URL` 的 `sslmode` 与 psql 同义，密码要 URL 编码。连 RDS 写 `?sslmode=require`。
 - 与别的项目共用一个库也行：表、枚举、索引都带 `ticketodo_` 前缀，迁移记录在
   `public.ticketodo_migrations`。
@@ -143,8 +145,8 @@ helm upgrade --install ticketodo oci://ghcr.io/yupanzi/charts/ticketodo --versio
 ## 版本与发布
 
 push 到 `master` 后 CI 的 release job 按 Conventional Commits 算版本：`feat` → minor，`fix` / `perf`
-→ patch，其余不发版。版本号、CHANGELOG、tag、GitHub Release、镜像 `ghcr.io/yupanzi/ticketodo` 与
-chart `oci://ghcr.io/yupanzi/charts/ticketodo` 都由它出，别手改版本号、别手打 tag。
+→ patch，其余不发版。版本号、CHANGELOG、tag、GitHub Release 与镜像 `ghcr.io/yupanzi/ticketodo` 都由
+它出，别手改版本号、别手打 tag。
 版本从 0.1.0 起（基线 tag `v0.0.0`）。
 
 ## 常用命令

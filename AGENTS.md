@@ -45,7 +45,7 @@ src/
 ├── bin/             migrate · cron/dueremind（tsup 打成自包含 cjs）
 └── test/            集成测试 helper（测试库、伪造会话的 caller）
 drizzle/             迁移（0001 是手写的审计只追加触发器）
-charts/ticketodo/    Helm：Deployment + Service + Ingress + migrate hook + CronJob
+deploy/              values.example.yaml：通用 chart dockerhelm 的部署 values（web + 迁移 hook + CronJob）
 ```
 
 ## 不要无意改回的权衡
@@ -148,38 +148,41 @@ charts/ticketodo/    Helm：Deployment + Service + Ingress + migrate hook + Cron
 
 ## 部署
 
+- **chart 用通用的 dockerhelm**（`oci://ghcr.io/yupanzi/charts/dockerhelm`），本仓库只有
+  `deploy/values.example.yaml`，各项的理由写在它的注释里。缺能力就给 dockerhelm 加通用字段，别在本仓库
+  再长一个 chart、别为 ticketodo 开特例。dockerhelm 的版本钉在 `ci.yml` 与 README「部署」两处，一起改。
 - **一个镜像三个入口**，command 必须显式给；占位 CMD 报错退出 64，别删也别换成能跑的默认值。
 - bin 入口用 tsup 打成 **cjs、依赖全打进去**（standalone 只追踪 web 进程的依赖）；`pg-native`、
-  `pg-cloudflare` external。改了入口要同时改 `tsup.config.ts`、Dockerfile 注释与 chart。
-- **`HOSTNAME=0.0.0.0` 在 Dockerfile 与 chart 都要有**：k8s 会把它设成 Pod 名。
-- **端口固定 3000**：Dockerfile 的 `PORT`、chart 的 `containerPort`。
-- **chart 不自建 Secret**；每个 Pod 只注入它 `secretKeys` 里的键（`_helpers.tpl` 的
-  `$credentials`），新增凭证要同时改那里。⚠️ 改了 Secret 必须 bump `values.secretVersion`。
-- **cronjobs 的键名 = `dist/bin/cron/` 下的文件名**，不能带连字符。
+  `pg-cloudflare` external。改了入口要同时改 `tsup.config.ts`、Dockerfile 注释与部署 values 的 command。
+- **`HOSTNAME=0.0.0.0` 在 Dockerfile 与部署 values 都要有**：k8s 会把它设成 Pod 名。
+- **端口固定 3000**：Dockerfile 的 `PORT`、部署 values 的 `containerPort`。
+- **Secret 不进 values**（预先建好 `ticketodo-app`）；凭证按 Pod 写 `secretKeyRef`：web 三个，迁移与
+  cron 只有 `DATABASE_URL`，别换成 `envFrom` 整个 Secret。⚠️ 改了 Secret 必须 bump `pod.annotations` 的
+  `ticketodo.io/secret-version`。
 - **容器不设 `TZ`**，北京时间在代码里显式算。
 - deploy 不进 CI。写完 Dockerfile 一定 `docker run` 一次三个入口。
 
 ## 版本与发布
 
-- **版本号只由 semantic-release 出**（`ci.yml` 的 release job）：别手改 `package.json` /
-  `Chart.yaml` 的版本号，别手打 tag。基线 tag `v0.0.0` 是唯一的例外（让首发是 0.1.0）。
+- **版本号只由 semantic-release 出**（`ci.yml` 的 release job）：别手改 `package.json` 的
+  版本号，别手打 tag。基线 tag `v0.0.0` 是唯一的例外（让首发是 0.1.0）。
 - ⚠️ **0.x 期间别用 `!` / `BREAKING CHANGE:`**：semantic-release 会直接发 1.0.0。
 - preset 是 `conventionalcommits`；`conventional-changelog-conventionalcommits` 钉在 9.x（理由见
   dingorg）。release job 别设 `GIT_AUTHOR_*`；`prepare` 的 `|| true` 别删。
-- 镜像与 chart 在 `.releaserc.json` 的 `publishCmd` 里按「先镜像后 chart」推。
+- 镜像在 `.releaserc.json` 的 `publishCmd` 里推；部署哪个版本只看 `--set image.tag`。
 
 ## 写代码时
 
 - **schema 改动**：改 `src/server/db/schema/*.ts` → `pnpm db:generate` → 逐行读生成的 SQL → 一并提交。
   ⚠️ pgEnum、索引、约束、函数名手写 `ticketodo_` 前缀（`createTable` 只管表名）。
-- **新增环境变量**：`server/env.ts`（放进对的子集）+ `.env.example`；非敏感的进 `values.yaml` 的
-  `env`，敏感的进 Secret 与 `_helpers.tpl` 的 `$credentials`。
+- **新增环境变量**：`server/env.ts`（放进对的子集）+ `.env.example`；非敏感的进
+  `deploy/values.example.yaml` 的 `container.env`，敏感的进 Secret，并给用到它的每个 Pod 写 `secretKeyRef`。
 - **新增变更**：服务层一个事务里「锁行 → 判权 → 改 → `auditInTx` → 通知」，procedure 加
   `.meta({ audit })`，权限规则先写进 `domain/policy.ts` 并补矩阵测试。
 - **列表新增筛选维度**：`listItems` + router 的 zod → `lib/item-filters.ts` 的 parse / toSearch（补
   往返测试）→ `items-table.tsx` 工具栏。
 - 类型 import 一律 `import type`（`verbatimModuleSyntax`）；相对 import 不写扩展名。
-- `pnpm-workspace.yaml` 归 pnpm 管（`allowBuilds` 删不得），charts 归 helm lint：Biome 都不查。
+- `pnpm-workspace.yaml` 归 pnpm 管（`allowBuilds` 删不得）：Biome 不查。
 - 升 pnpm 用 `corepack use pnpm@<版本>`。新包刚发布时 pnpm 12 的 `minimumReleaseAge` 会拦，显式装
   才会写进 `minimumReleaseAgeExclude`。
 
@@ -203,8 +206,8 @@ mv .env /tmp/x && pnpm build; mv /tmp/x .env   # 构建期零 env
   200；`dueremind.cjs` exit 0。
 - **界面**：Chrome DevTools 看 1440 与 390 两个宽度。dev 页面不跟着源码变（改过 `ui/` 或开着 dev 跑了
   `pnpm build`）：停 dev、删 `.next/dev` 再起。
-- **chart**：`helm lint charts/ticketodo -f charts/ticketodo/values.example.yaml`；`helm template`
-  看 web 拿三个凭证、迁移与 cron 只拿 `DATABASE_URL`，`BETTER_AUTH_URL` 由 host 派生。
+- **部署 values**：跑 `ci.yml` check job 里那条 `helm template`，看 web 拿三个凭证、迁移与 cron 只拿
+  `DATABASE_URL`，`BETTER_AUTH_URL` 由 `ingress.hostname` 派生。
 
 ## 注释纪律
 

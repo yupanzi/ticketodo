@@ -3,7 +3,7 @@ import { getTaskEnv } from "~/server/env";
 import { logger } from "~/server/log";
 import { runDueRemind } from "~/server/services/due-remind";
 
-// CronJob 调用（charts/ticketodo 的 cronjobs.dueremind）。重跑幂等：失败了 Job 重试即可
+// CronJob 调用（deploy/values.example.yaml 的 cronJobs.dueremind）。重跑幂等：失败了 Job 重试即可
 
 async function main(): Promise<void> {
 	const env = getTaskEnv();
