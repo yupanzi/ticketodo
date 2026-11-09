@@ -25,6 +25,8 @@ npm-debug.log*
 .env*.local
 # .env 的本地备份（含真实凭证）
 .env.bak-*
+# 各环境的部署 values（README「部署」让复制到这里）：含 ACM ARN、内部域名等，仓库是公开的
+/values.*.yaml
 
 # typescript
 *.tsbuildinfo
