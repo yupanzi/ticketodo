@@ -1,7 +1,8 @@
 # ticketodo
 
 企业内部的 ticket 与 todo：按「重要 × 紧急」四象限排优先级（P0–P3），只用企业账号（authentik，OIDC）
-登录，带管理员、站内通知与只追加的审计。单镜像，用通用 Helm chart [dockerhelm](https://github.com/yupanzi/dockerhelm) 部署。
+登录，带管理员、站内通知与只追加的审计。浏览器与 AI 调的是同一套 REST 接口（`/api/v1`，OpenAPI），
+AI 拿个人 API key 以签发人的身份操作。单镜像，用通用 Helm chart [dockerhelm](https://github.com/yupanzi/dockerhelm) 部署。
 
 ## 规则一览
 
@@ -38,18 +39,46 @@
   期望完成（排不过来）标红；视角同日历
 - 详情：状态操作、定级、编辑、改派、转 ticket、删除；描述与评论支持 Markdown，评论里 `@` 人
 - 站内通知：被指派、状态变更、新评论、被 @、即将到期、已逾期（侧栏未读数 30 秒刷新）
-- 管理后台：授予 / 撤销管理员、标签改名 / 合并 / 删除、已删单子恢复、审计查询
+- 接口密钥：给 AI 或脚本签个人 API key（见下「API 与 AI 接入」）；时间线、评论、审计里经 key 做的操作标「API」
+- 管理后台：授予 / 撤销管理员、标签改名 / 合并 / 删除、已删单子恢复、全员 API key 的查看与撤销、审计查询
+
+## API 与 AI 接入
+
+全部功能都在 `/api/v1` 下，浏览器用的就是这套接口，没有另一套「内部 API」。接口文档（OpenAPI 3.1）在
+`/api/v1/openapi.json`，同样要认证。
+
+```bash
+curl -H "Authorization: Bearer tk_…" https://<ticketodo 域名>/api/v1/users/me
+curl -H "Authorization: Bearer tk_…" "https://<ticketodo 域名>/api/v1/items?statuses[]=open&limit=20"
+curl -X POST -H "Authorization: Bearer tk_…" -H "Content-Type: application/json" \
+  -d '{"to":"in_progress"}' https://<ticketodo 域名>/api/v1/items/TK-20261109-0001/transition
+```
+
+- **签发**：侧栏「接口密钥」。key 以签发人的身份操作，权限、通知、审计与本人在页面上一样。
+  | 级别 | 判权身份 | 能调 |
+  | --- | --- | --- |
+  | 只读 | 成员 | 只有 GET |
+  | 读写 | 成员（管理员签的也是） | 全部业务接口 |
+  | 管理员 | 签发人本人（含管理员权限）；只有管理员能签，签发人被撤销管理员后这个 key 直接 403 | 全部业务接口 |
+- 一人可签多个（建议一台机器 / 一个 AI 一个），有效期 30 / 90 / 365 天、自定义或永不过期。明文只在
+  签发时显示一次，库里只存 SHA-256；丢了就「重新签发」（同一个 key 换密钥，旧的立即失效）。
+- **key 不能管理 key**：签发、重新签发、撤销只能在浏览器里做，泄露的 key 没法自己续命。
+- 经 key 做的操作在时间线、评论、审计里标「API」，悬停看 key 名称；你的 AI 做的事不会通知你自己。
+- 不限流：靠审计与撤销止损。管理员在「密钥管理」看全员的 key，点「审计」看某个 key 做过的全部操作。
+- **Claude Code**：`skills/ticketodo/` 是现成的 skill，复制到 `~/.claude/skills/` 后按里面的说明设
+  `TICKETODO_URL` 与 `TICKETODO_API_KEY` 两个环境变量。MCP 等 oRPC 2 正式版后接官方的 `@orpc/mcp`。
 
 ## 架构
 
 ```
-浏览器 ──▶ Next.js（App Router · tRPC · better-auth）──▶ PostgreSQL
-               │                                   ▲
-               └─ OIDC ──▶ authentik ──▶ dingorg（钉钉）│
-CronJob dueremind（每天 09:00 北京）────────────────┘
+浏览器（cookie）─┐
+                 ├─▶ /api/v1（oRPC · OpenAPI）─▶ Next.js（App Router · better-auth）──▶ PostgreSQL
+AI（API key）────┘                                   │                              ▲
+                                                     └─ OIDC ─▶ authentik ─▶ dingorg│
+CronJob dueremind（每天 09:00 北京）──────────────────────────────────────────────┘
 ```
 
-pnpm · Next.js 16 · React 19 · TypeScript · tRPC 11 · drizzle · PostgreSQL · better-auth ·
+pnpm · Next.js 16 · React 19 · TypeScript · oRPC 1（contract-first + OpenAPI）· drizzle · PostgreSQL · better-auth ·
 Tailwind 4 · shadcn/ui · Biome。一个镜像三个入口：`node server.js`（web）、
 `node dist/bin/migrate.cjs`（迁移）、`node dist/bin/cron/dueremind.cjs`（到期提醒）。
 
@@ -88,19 +117,26 @@ pnpm dev                        # http://localhost:3000
 - 登出只退出 ticketodo，不连带退出 authentik 的单点登录会话。
 - 会话 7 天、活跃时自动续期。离职的人在 authentik / dingorg 侧被拒后无法再次登录，但已有会话要等
   过期；需要立刻踢人时，到库里删掉他在 `ticketodo_session` 的行。
+- ⚠️ **API key 不经过 authentik**：离职的人在 authentik 被停用后，他签的 key 照样能用到过期。离职时到
+  「密钥管理」把他的 key 一并撤销。
 
 ## 审计
 
 写操作、登录 / 登出 / 登录失败、首次登录建档、权限变更、越权被拒（`status = failure`）都记进
 `ticketodo_audit_log`，带字段级前后值（`details.changes`）与 `request_id`（与日志的 `reqId` 同值，
-也在响应头 `x-request-id` 里）。表上有触发器拒绝 UPDATE / DELETE / TRUNCATE。
+也在响应头 `x-request-id` 里）。经 API key 的操作还记 `api_key_id` 与 `api_key_name`。表上有触发器拒绝
+UPDATE / DELETE / TRUNCATE。
 
-管理后台「审计日志」可按动作前缀、单号、结果、日期查。直接查库：
+管理后台「审计日志」可按动作前缀、单号、结果、日期、API key 查。直接查库：
 
 ```sql
 -- 某张单的全部记录（含评论）
 SELECT at, actor_name, action, status, details FROM ticketodo_audit_log
 WHERE target_name = 'TK-20261103-0001' ORDER BY id;
+
+-- 某个 API key 做过的全部操作（key 泄露时查）
+SELECT at, actor_name, action, target_name, ip FROM ticketodo_audit_log
+WHERE api_key_id = '<key id>' ORDER BY id;
 
 -- 最近的越权尝试
 SELECT at, actor_name, action, target_name, details->>'summary', ip FROM ticketodo_audit_log
@@ -112,8 +148,9 @@ socket 地址，又不能信来件的头）。
 
 ## 日志
 
-stdout 一行一个 JSON（pino），级别是字符串、时间 ISO。每个 tRPC 调用一行（变更 info、查询 debug），带
-`reqId`、`path`、`durationMs`。SQL 参数、OAuth token 与回调里的 code 不进日志。`LOG_LEVEL` 调级别。
+stdout 一行一个 JSON（pino），级别是字符串、时间 ISO。每个 API 调用一行（写 info、读 debug），带
+`reqId`、`path`、`durationMs`，经 key 的还带 `apiKeyId`。SQL 参数、OAuth token、回调里的 code 与 API key
+明文（`tk_…`）不进日志。`LOG_LEVEL` 调级别。
 
 ## 部署（K8s / Helm）
 

@@ -6,10 +6,13 @@ Next 16 的 API 以 `node_modules/next/dist/docs/` 为准（`AGENTS.md` 由 `nex
 ## 边界
 
 ticket 与 todo 的记录、流转、通知与审计。登录只走 authentik（OIDC），外部依赖只有 Postgres。
+接口只有 `/api/v1` 一套 REST（OpenAPI），浏览器与 AI 共用；AI 拿个人 API key 以签发人身份调。
 以下刻意不存在，加之前先问：
 
 - 附件、邮件 / 钉钉通知（通知只有站内；要加钉钉就在 `insertNotifications` 之后加一个投递通道）
-- 团队 / 项目分组（只有全局标签）、停用用户、邮箱密码登录、对外 REST API
+- 团队 / 项目分组（只有全局标签）、停用用户、邮箱密码登录
+- 第二套接口（RPC 协议、给前端专用的端点）、API 限流（靠审计与撤销止损）、手写的 MCP 适配（等 oRPC 2
+  正式版接官方 `@orpc/mcp`；契约里的 summary / description 到时直接当工具说明）
 - 「未指派」的 ticket 与认领：ticket 建单必须指定负责人
 
 ## 地图
@@ -19,6 +22,9 @@ src/
 ├── domain/          纯逻辑、无 IO，前后端共用：priority · status（状态机）· policy（权限矩阵）
 │                    · item-code · due（北京时间）· item-list（列表排序与到期筛选的词表）· diff
 │                    · notify（收件人）· mention · identity · audit · schedule（日历月格、甘特区间、视角）
+│                    · api-key（级别规则、key 格式）
+├── contract/        API 契约：路径、方法、入参与响应的 zod、写给 AI 看的说明。浏览器、服务端、OpenAPI
+│                    文档读同一份；只依赖 zod 与 domain
 ├── server/
 │   ├── env.ts       环境变量（web / task 两个子集，惰性求值）
 │   ├── log.ts       pino 根 logger · err 序列化与 SQL 参数脱敏
@@ -30,13 +36,15 @@ src/
 │   │                · session（RSC 取会话）· cli（只给 `auth generate` 对照 schema）
 │   ├── audit/       auditInTx（随事务）· recordAuditSafe（吞错）
 │   ├── services/    业务写读：item · comment · tag · user · notification · due-remind · audit-query
-│   │                · visibility（canView 的 SQL 版）· item-code（取号）
-│   ├── errors.ts    AppError（服务层不依赖 tRPC）
-│   └── api/         trpc.ts（context · 中间件 · procedure）· context.ts（从请求拼）· root.ts · routers/
-├── trpc/            query-client · react（客户端 Provider）· server（RSC 预取）
+│   │                · api-key（签发、校验）· visibility（canView 的 SQL 版）· item-code（取号）
+│   ├── errors.ts    AppError（服务层不依赖 oRPC）
+│   └── api/         context（请求 → 身份：cookie 或 Bearer key）· orpc（guard · 错误与日志拦截器）
+│                    · routers/（实现契约）· router（组装 · 进程内 client）· http（`/api/v1` 唯一入口：
+│                    CSRF、query 还原）· openapi（文档生成）
+├── orpc/            client（浏览器：OpenAPILink + query utils）· server（RSC 预取）· query-client · react
 ├── app/             sign-in · (app)/{看板, items, items/new, items/[code], calendar, gantt,
-│                    notifications, admin/*}
-│                    · api/{auth, trpc, healthz}
+│                    notifications, settings/api-keys, admin/*}
+│                    · api/{auth, v1, healthz}
 ├── lib/             format（日期显示，一律北京时间）· item-filters（列表筛选 ⇄ 地址栏）
 │                    · schedule-params（日历、甘特 ⇄ 地址栏）· use-replace-search · auth-client
 ├── components/      layout（PageHeader · Panel · EmptyState · Field · PropertyList）· chip · badges
@@ -47,8 +55,9 @@ src/
 ├── proxy.ts         定 x-request-id；页面无会话 cookie 去登录页
 ├── instrumentation.ts  启动校验 · onRequestError 走 pino
 ├── bin/             migrate · cron/dueremind（tsup 打成自包含 cjs）
-└── test/            集成测试 helper（测试库、伪造会话的 caller）
+└── test/            集成测试 helper（测试库、伪造身份的 API client）
 drizzle/             迁移（0001 是手写的审计只追加触发器）
+skills/ticketodo/    给 Claude Code 的 skill：AI 怎么调 `/api/v1`（README 说怎么装）
 deploy/              values.example.yaml：通用 chart dockerhelm 的部署 values（web + 迁移 hook + CronJob）
 ```
 
@@ -71,6 +80,25 @@ deploy/              values.example.yaml：通用 chart dockerhelm 的部署 val
 - **升 better-auth 时 `@better-auth/core` 一起升到同一版本**（审计取 IP 复用它的 `getIP`），并用
   `pnpm dlx auth@<版本> generate --config src/server/auth/cli.ts --output /tmp/x.ts` 对照
   `schema/auth.ts` 补列（别直接覆盖：前缀、时区、枚举会丢）。
+
+### API 与 API key（`contract/`、`server/api/`）
+
+- **契约是接口的唯一定义**：浏览器的 OpenAPILink、服务端 `os.router`（运行时核对实现与契约一一对应）、
+  OpenAPI 文档都从 `contract/` 来。⚠️ 它被浏览器打包：别 import `~/server`。
+- **输出都有 schema**：AI 靠它知道回来什么，服务端返回值也按它校验（多余字段被剥掉）。时间戳服务端是
+  Date、线上是 ISO 字符串；浏览器（`JsonifiedClient`）与 RSC 预取（`createJsonifiedRouterClient`）
+  拿到的同形，预取的数据才能原样进客户端缓存。别加回 superjson：AI 看不懂它的类型标记。
+- **认证与 key 级别只在 `guard` 判**，往下只剩 `svc.actor`：服务层与 `policy.ts` 不知道请求来自浏览器
+  还是 AI。只读 key 看**接口声明的方法**（不是请求的方法）：⚠️ GET 一律无副作用，否则只读 key 拦不住写。
+- **key 永远不能管理 key**（`guard({ browserOnly })`）：泄露的 key 不能自己续命或签新 key。
+- **管理员级 key 的签发人被撤销管理员后直接 403**，别降成读写：AI 会带着「我是管理员」的假设继续操作。
+- **带了 `Authorization` 就只认 API key**，不落回 cookie：无效 key 不能悄悄变成某人的浏览器会话。
+- **key 只存 SHA-256**，明文只在签发 / 重新签发的响应里出现一次；别改成可再次查看（浏览器会话被盗
+  会升级成永久访问）。`last_used_at` 至多一分钟写一次。
+- **CSRF**：靠 cookie 认证的写请求校验 `Origin` = `BETTER_AUTH_URL`（`http.ts`）；Bearer 不受影响。
+  oRPC 也收表单编码的请求体，别以为 JSON 预检能挡住。
+- query 里的值都是字符串：`SmartCoercionPlugin` 按 schema 还原；`ScalarToArrayPlugin` 把单个值包成数组，
+  它的 `order` 必须比前者大（后 init、先执行），否则元素不会被还原成数字。
 
 ### 权限与可见性
 
@@ -108,12 +136,16 @@ deploy/              values.example.yaml：通用 chart dockerhelm 的部署 val
   审计：断言按 `(target_type, target_id)` 限定，别只按 id（条目、标签的 id 会撞）。
 - ⚠️ **`actor_type` 是 PG 枚举，只加不删**。来件能控制的值（ip、OAuth 的 error 码）截断或白名单后
   才进审计。
-- 动作串集中在 `resources.ts` 的 `AUDIT_ACTIONS`；变更 procedure 用 `.meta({ audit })` 声明自己的动作。
+- 动作串集中在 `resources.ts` 的 `AUDIT_ACTIONS`；变更接口用 `guard({ audit })` 声明自己的动作。
+- **经 API key 的操作记 `api_key_id` 与 `api_key_name`**（随 `AuditSource` 进 `actorAudit`，服务层不用管）；
+  名称进时间线白名单，id 只给管理员。评论另记 `api_key_id`（正文最后一次经哪个 key 写的）。
 
 ### 日志与错误
 
 - **全进程一个 pino 根 logger**，Error 只放 `err` 键；别用 `console.*`。better-auth 的日志也接到它。
-- **tRPC 500 只回「服务器内部错误 + 请求 id」**（`errorFormatter`）：原始 message 可能带 SQL。
+- **API 500 只回「服务器内部错误 + 请求 id」**（`orpc.ts` 的 `normalizeError`，HTTP 与进程内调用共用）：
+  原始 message 可能带 SQL。
+- **API key 明文在日志写出前整行替换**（`log.ts` 的 `streamWrite`）：`tk_` 前缀就是为了认得出来。
 - `next dev` 的请求日志关掉（`logging.incomingRequests: false`）：回调 URL 带 OAuth code；生产不逐请求
   打日志。⚠️ 别改成 `{ ignore: [正则] }`：Next 16.4 下开发页面会无限重载。
 - `x-request-id` 只在信任代理时沿用来件的（`request.ts`），否则新生成。
@@ -149,9 +181,11 @@ deploy/              values.example.yaml：通用 chart dockerhelm 的部署 val
 - **每个路由都有 `loading.tsx`**（`page-skeleton.tsx`）：没有它点链接毫无反馈，Next 也不预取动态页面。
   新页面一并加，骨架网格与真实页面一致。
 - **页面数据在 RSC 里预取**（`HydrateClient`），别留给客户端挂载后再查（多一个串行往返）。预取的 key
-  必须与客户端一致：列表走 `item-filters`，日历、甘特走 `schedule-params`，看板视角走
-  `DEFAULT_BOARD_SCOPE`。详情页把单号转大写（小写就重定向），byCode 的 key 只有一种写法。
-- **改单的 mutation 回最新数据**（item 回详情、评论回列表），客户端用 `useItemCache` 换上；状态变更乐观
+  必须与客户端一致（`~/orpc/server` 与 `~/orpc/client` 同一套路径）：列表走 `item-filters` 的
+  `listInfiniteOptions`，日历、甘特走 `schedule-params`，看板视角走 `DEFAULT_BOARD_SCOPE`。详情页把单号转
+  大写（小写就重定向），`item.get` 的 key 只有一种写法。
+- **改单的接口回最新数据**（item 回详情、评论回列表），客户端用 `useItemCache` 换上（条目在 `item`、
+  看板日历甘特概览在 `view` 下，两处都要刷）；状态变更乐观
   更新（按钮集合用 `itemPermissions` 现算）。⚠️ 后台刷新别 await：按钮会多转一个往返。
 - **筛选、翻页写地址栏用 `useReplaceSearch`**（原生 replaceState）：⚠️ 别用 `router.replace`，服务端会把
   整页连同预取再渲染一遍，每改一次白查一次库。
@@ -198,10 +232,12 @@ deploy/              values.example.yaml：通用 chart dockerhelm 的部署 val
   ⚠️ pgEnum、索引、约束、函数名手写 `ticketodo_` 前缀（`createTable` 只管表名）。
 - **新增环境变量**：`server/env.ts`（放进对的子集）+ `.env.example`；非敏感的进
   `deploy/values.example.yaml` 的 `container.env`，敏感的进 Secret，并给用到它的每个 Pod 写 `secretKeyRef`。
-- **新增变更**：服务层一个事务里「锁行 → 判权 → 改 → `auditInTx` → 通知」，procedure 加
-  `.meta({ audit })`，权限规则先写进 `domain/policy.ts` 并补矩阵测试。
-- **列表新增筛选维度**：`listItems` + router 的 zod → `lib/item-filters.ts` 的 parse / toSearch（补
-  往返测试）→ `items-table.tsx` 工具栏。
+- **新增接口**：先在 `contract/` 写（method、path、入参与输出 schema、description 写清规则——AI 照着它
+  调用）；再在 `server/api/routers/` 用 `os.<路径>.use(guard(…)).handler(…)` 实现。有副作用的不用 GET。
+- **新增变更**：服务层一个事务里「锁行 → 判权 → 改 → `auditInTx` → 通知」，实现挂 `guard({ audit })`，
+  权限规则先写进 `domain/policy.ts` 并补矩阵测试。
+- **列表新增筛选维度**：`listItems` + `contract/item.ts` 的 zod → `lib/item-filters.ts` 的 parse / toSearch
+  （补往返测试）→ `items-table.tsx` 工具栏。
 - 类型 import 一律 `import type`（`verbatimModuleSyntax`）；相对 import 不写扩展名。
 - `pnpm-workspace.yaml` 归 pnpm 管（`allowBuilds` 删不得）：Biome 不查。
 - 升 pnpm 用 `corepack use pnpm@<版本>`。新包刚发布时 pnpm 12 的 `minimumReleaseAge` 会拦，显式装
@@ -219,10 +255,14 @@ mv .env /tmp/x && pnpm build; mv /tmp/x .env   # 构建期零 env
   `services/visibility.integration.test.ts` · API 全流程 `server/api/item.integration.test.ts`
   （NOT_FOUND 不泄露、改派权限、并发取号、时间线白名单、审计只追加）· 登录 hook 与种子管理员
   `server/auth/hooks.integration.test.ts` · 到期提醒 `services/due-remind.integration.test.ts`
-  · 脱敏 `server/log.test.ts` · sslmode `server/db/index.test.ts`。
+  · API key `server/api/api-key.integration.test.ts`（真 HTTP + Bearer：三级、重新签发、撤销、过期、
+  key 不能管理 key、审计与评论标 key、OpenAPI 要认证）· 脱敏 `server/log.test.ts` · sslmode
+  `server/db/index.test.ts`。
 - **端到端**：本地用 mock OIDC 或真实 authentik 走「登录 → 建 ticket（选负责人）→ 对方收到通知 → 负责人定级 →
-  开始处理 → 评论 @ → 标记已解决 → 提单人确认关闭 → 拖象限 → 审计查到 diff」；日志里 grep 不到
-  `code=` 与 token。
+  开始处理 → 评论 @ → 标记已解决 → 提单人确认关闭 → 拖象限 → 审计查到 diff」；再签一个 API key，用
+  `skills/ticketodo` 的 `tk` 建单、评论，时间线与评论标「API」。日志里 grep 不到 `code=`、token 与 `tk_` 明文。
+  没法登录 authentik 时，可以把 dev 指向测试库，用 better-auth 的 `internalAdapter.createSession` 与
+  `makeSignature` 造会话 cookie。
 - **镜像**：无入口 exit 64；`migrate.cjs` 迁移成功；`server.js` 缺 env exit 1、齐了 `/api/healthz`
   200；`dueremind.cjs` exit 0。
 - **界面**：Chrome DevTools 看 1440 与 390 两个宽度。dev 页面不跟着源码变（改过 `ui/` 或开着 dev 跑了
