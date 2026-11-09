@@ -149,6 +149,8 @@ deploy/              values.example.yaml：通用 chart dockerhelm 的部署 val
   必须与客户端一致：列表入参走 `listQueryInput`，看板视角走 `DEFAULT_BOARD_SCOPE`。
 - **改单的 mutation 回最新数据**（item 回详情、评论回列表），客户端用 `useItemCache` 换上；状态变更乐观
   更新（按钮集合用 `itemPermissions` 现算）。⚠️ 后台刷新别 await：按钮会多转一个往返。
+- **筛选、翻月写地址栏用 `window.history.replaceState`**：⚠️ 别用 `router.replace`，服务端会把整页连同
+  预取再渲染一遍，每改一次白查一次库。
 
 ### 构建期与运行时
 

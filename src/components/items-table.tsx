@@ -10,7 +10,7 @@ import {
 	X,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useDeferredValue, useEffect, useState } from "react";
 
 import { Button } from "~/components/ui/button";
@@ -150,7 +150,6 @@ function SortHead({
 export function ItemsTable({ initial }: { initial: ListFilterState }) {
 	const trpc = useTRPC();
 	const me = useMe();
-	const router = useRouter();
 	const pathname = usePathname();
 	const [f, setF] = useState(initial);
 	const set = <K extends keyof ListFilterState>(k: K, v: ListFilterState[K]) =>
@@ -158,12 +157,15 @@ export function ItemsTable({ initial }: { initial: ListFilterState }) {
 	const deferredQ = useDeferredValue(f.q);
 	const { data: tags = [] } = useQuery(trpc.tag.list.queryOptions());
 
-	// 筛选写回地址栏（replace：不刷历史记录），可直接把链接发给同事
+	// 筛选写回地址栏（replace：不刷历史记录），可直接把链接发给同事。⚠️ 用原生 replaceState：
+	// router.replace 会让服务端把整页（含列表预取）再渲染一遍，每改一次筛选白查一次库
 	useEffect(() => {
-		router.replace(`${pathname}${toSearch({ ...f, q: deferredQ })}`, {
-			scroll: false,
-		});
-	}, [f, deferredQ, pathname, router]);
+		window.history.replaceState(
+			null,
+			"",
+			`${pathname}${toSearch({ ...f, q: deferredQ })}`,
+		);
+	}, [f, deferredQ, pathname]);
 
 	// 「我负责的 / 我提的」是人员筛选的快捷方式：选了别人时三个都不亮
 	const peopleOf = (m: Mine) => ({
