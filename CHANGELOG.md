@@ -1,3 +1,21 @@
+## [0.2.0](https://github.com/yupanzi/ticketodo/compare/v0.1.0...v0.2.0) (2026-11-09)
+
+### Features
+
+* ticket 的优先级由接收方定，建单先是「待定级」 ([cb6c4b9](https://github.com/yupanzi/ticketodo/commit/cb6c4b9cef202a859654c83627978767e1ecb6e5))
+* **ui:** 菜单名统一为四个字 ([43be9e9](https://github.com/yupanzi/ticketodo/commit/43be9e9526e69035d469d0cbadd41fda847b7111))
+* 日历视图，按期望完成日期排的月历 ([8e25687](https://github.com/yupanzi/ticketodo/commit/8e25687f63000eb064469f2204b17d127cc049fe))
+* 甘特图与计划开始日期 ([a283413](https://github.com/yupanzi/ticketodo/commit/a283413ed2efecc15a5ba5d20c118e6dcab1d221))
+
+### Bug Fixes
+
+* 看板拖动后用接口回的详情更新缓存 ([f937f13](https://github.com/yupanzi/ticketodo/commit/f937f1351e5804e89c6819bfd428f42f3cc96c94))
+
+### Performance Improvements
+
+* 列表筛选写地址栏改用原生 replaceState ([c5b21d6](https://github.com/yupanzi/ticketodo/commit/c5b21d6ea7a635bbc41f6d0b5b3b3d85158f9263))
+* 页面数据随页面下发、改单即时生效、各路由加骨架屏 ([aab7f3a](https://github.com/yupanzi/ticketodo/commit/aab7f3a47868938818459b1f5b4c7b856ecd1501))
+
 ## [0.1.0](https://github.com/yupanzi/ticketodo/compare/v0.0.0...v0.1.0) (2026-11-04)
 
 ### Features
