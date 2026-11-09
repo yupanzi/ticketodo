@@ -139,13 +139,13 @@ function StatusActions({ detail }: { detail: Detail }) {
 
 function EditDialog({
 	item,
-	canSetPriority,
+	canPlan,
 	open,
 	onOpenChange,
 }: {
 	item: Item;
-	/** 提单人能编辑但不能改优先级：不显示，也不提交 */
-	canSetPriority: boolean;
+	/** 提单人能编辑但不能定级、排期：不显示，也不提交 */
+	canPlan: boolean;
 	open: boolean;
 	onOpenChange: (o: boolean) => void;
 }) {
@@ -156,6 +156,7 @@ function EditDialog({
 		description: item.description,
 		priority: item.priority,
 		dueDate: item.dueDate ?? "",
+		startDate: item.startDate ?? "",
 		tags: item.tags.map((t) => t.name),
 	});
 	const [fields, setFields] = useState(initial);
@@ -193,19 +194,19 @@ function EditDialog({
 							expectedUpdatedAt: item.updatedAt,
 							title: fields.title,
 							description: fields.description,
-							...(canSetPriority && fields.priority
-								? { priority: fields.priority }
+							// 提单人看不到也不提交这两项（canPlan）
+							...(canPlan
+								? {
+										...(fields.priority ? { priority: fields.priority } : {}),
+										startDate: fields.startDate || null,
+									}
 								: {}),
 							dueDate: fields.dueDate || null,
 							tags: fields.tags,
 						});
 					}}
 				>
-					<ItemFields
-						onChange={setFields}
-						showPriority={canSetPriority}
-						value={fields}
-					/>
+					<ItemFields onChange={setFields} planning={canPlan} value={fields} />
 					<DialogFooter>
 						<Button
 							onClick={() => onOpenChange(false)}
@@ -455,7 +456,7 @@ export function ItemDetail({ code }: { code: string }) {
 				{can.statuses.length > 0 && (can.edit || can.assign || can.convert) && (
 					<span aria-hidden className="mx-1 h-6 w-px bg-border" />
 				)}
-				{item.priority === null && can.setPriority && (
+				{item.priority === null && can.plan && (
 					<Button onClick={() => setDialog("triage")} variant="outline">
 						<Grid2x2 />
 						定级
@@ -532,6 +533,9 @@ export function ItemDetail({ code }: { code: string }) {
 						<Property label="优先级">
 							<PriorityBadge priority={item.priority} withLabel />
 						</Property>
+						<Property label="计划开始">
+							{item.startDate ? formatDay(item.startDate) : "未排"}
+						</Property>
 						<Property label="期望完成">
 							{item.dueDate ? formatDay(item.dueDate) : "未设置"}
 						</Property>
@@ -563,13 +567,13 @@ export function ItemDetail({ code }: { code: string }) {
 
 			{can.edit && (
 				<EditDialog
-					canSetPriority={can.setPriority}
+					canPlan={can.plan}
 					item={item}
 					onOpenChange={onOpenChange}
 					open={dialog === "edit"}
 				/>
 			)}
-			{can.setPriority && (
+			{can.plan && (
 				<TriageDialog
 					item={item}
 					onOpenChange={onOpenChange}

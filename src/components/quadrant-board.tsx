@@ -32,7 +32,7 @@ import { Skeleton } from "~/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { dueState, todayInAppTz } from "~/domain/due";
 import { type BoardScope, DEFAULT_BOARD_SCOPE } from "~/domain/item-list";
-import { canSetPriority } from "~/domain/policy";
+import { canPlan } from "~/domain/policy";
 import {
 	PRIORITIES,
 	PRIORITY_META,
@@ -176,7 +176,7 @@ function counterpart(item: BoardItem, me: Me) {
 function ItemCard({ item, today }: { item: BoardItem; today: string }) {
 	const me = useMe();
 	// 拖动即改优先级：只有负责人与管理员（提单人能看不能拖）
-	const draggable = canSetPriority(me, refOf(item));
+	const draggable = canPlan(me, refOf(item));
 	const { attributes, listeners, setNodeRef, transform, isDragging } =
 		useDraggable({ id: item.code, disabled: !draggable });
 	const overdue = dueState(item.dueDate, item.status, today) === "overdue";

@@ -19,6 +19,9 @@ export function todayInAppTz(now: Date = new Date()): string {
 	return DAY_FORMAT.format(now);
 }
 
+/** 某个时刻是北京的哪一天（如建单日） */
+export const dayInAppTz = (at: Date): string => DAY_FORMAT.format(at);
+
 /** 起止都含当天（`YYYY-MM-DD`）；两端都空 = 不限 */
 export interface DayRange {
 	from?: string;
@@ -65,7 +68,8 @@ export function dueState(
 	return "normal";
 }
 
-function daysBetween(from: string, to: string): number {
+/** `to` 比 `from` 晚几天（同一天为 0） */
+export function daysBetween(from: string, to: string): number {
 	return Math.round(
 		(Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) /
 			86_400_000,

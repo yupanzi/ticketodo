@@ -33,6 +33,7 @@ const FIELD_LABEL: Record<string, string> = {
 	description: "描述",
 	priority: "优先级",
 	dueDate: "期望完成日期",
+	startDate: "计划开始日期",
 	tags: "标签",
 };
 
@@ -70,7 +71,7 @@ function describeChange(field: string, c: AuditChanges[string]): string {
 			? `定级为「${fmt(c.to)}」`
 			: `把${label}从「${fmt(c.from)}」改为「${fmt(c.to)}」`;
 	}
-	if (field === "dueDate") {
+	if (field === "dueDate" || field === "startDate") {
 		const fmt = (d: unknown) =>
 			typeof d === "string" ? formatDay(d) : "（无）";
 		return `把${label}从「${fmt(c.from)}」改为「${fmt(c.to)}」`;

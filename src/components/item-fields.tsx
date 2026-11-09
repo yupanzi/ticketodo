@@ -17,6 +17,8 @@ export interface ItemFieldValues {
 	priority: Priority | null;
 	/** `YYYY-MM-DD` 或空串 */
 	dueDate: string;
+	/** 计划开始，`YYYY-MM-DD` 或空串 */
+	startDate: string;
 	tags: string[];
 }
 
@@ -24,12 +26,12 @@ export interface ItemFieldValues {
 export function ItemFields({
 	value,
 	onChange,
-	showPriority,
+	planning,
 }: {
 	value: ItemFieldValues;
 	onChange: (v: ItemFieldValues) => void;
-	/** 优先级由接收方定（`canSetPriority`）：建 ticket 与提单人编辑时不出现 */
-	showPriority: boolean;
+	/** 优先级与计划开始由接收方定（`canPlan`）：建 ticket 与提单人编辑时不出现 */
+	planning: boolean;
 }) {
 	const set = <K extends keyof ItemFieldValues>(k: K, v: ItemFieldValues[K]) =>
 		onChange({ ...value, [k]: v });
@@ -46,7 +48,7 @@ export function ItemFields({
 					value={value.title}
 				/>
 			</Field>
-			{showPriority && (
+			{planning && (
 				<Field
 					hint="重要：影响目标、不做会有后果；紧急：有时限、拖不得"
 					label="优先级"
@@ -58,6 +60,20 @@ export function ItemFields({
 				</Field>
 			)}
 			<div className="grid gap-5 sm:grid-cols-2">
+				{planning && (
+					<Field
+						hint="甘特图的起点；不排就从建单日算"
+						htmlFor="item-start"
+						label="计划开始日期"
+					>
+						<DatePicker
+							id="item-start"
+							onChange={(d) => set("startDate", d)}
+							placeholder="不排"
+							value={value.startDate}
+						/>
+					</Field>
+				)}
 				<Field htmlFor="item-due" label="期望完成日期">
 					<DatePicker
 						id="item-due"

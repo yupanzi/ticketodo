@@ -50,6 +50,11 @@ export const items = createTable(
 			.references(() => user.id, { onDelete: "restrict" }),
 		/** 期望完成日期，北京日期；string 模式：date 列转 Date 会被时区挪一天 */
 		dueDate: date("due_date", { mode: "string" }),
+		/**
+		 * 计划开始日期（甘特图的起点），接收方排期（`canPlan`）。不约束早于期望完成：期望完成提单人也能改，
+		 * 晚于它恰好是「排不过来」的信号，甘特图标红
+		 */
+		startDate: date("start_date", { mode: "string" }),
 		/** todo 转成 ticket 的时刻：此前的时间线只有管理员看得到（那时还是私人的） */
 		convertedAt: timestamp("converted_at", { withTimezone: true }),
 		resolvedAt: timestamp("resolved_at", { withTimezone: true }),

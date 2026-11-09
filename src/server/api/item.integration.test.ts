@@ -304,7 +304,7 @@ describe.skipIf(!hasTestDb)("item API", () => {
 			const code = await newTicket(reporter, assignee);
 			const { item, permissions } = await reporter.api.item.byCode({ code });
 			expect(item.priority).toBeNull();
-			expect(permissions.setPriority).toBe(false);
+			expect(permissions.plan).toBe(false);
 			const [created] = await reporter.api.item.timeline({ code });
 			expect(created?.changes?.priority).toBeUndefined();
 		});
@@ -673,6 +673,78 @@ describe.skipIf(!hasTestDb)("item API", () => {
 					}),
 				),
 			).toBe("BAD_REQUEST");
+		});
+	});
+
+	describe("计划开始与甘特", () => {
+		it("计划开始由负责人排；提单人改 FORBIDDEN；时间线记下", async () => {
+			const today = todayInAppTz();
+			const code = await newTicket(reporter, assignee, {
+				dueDate: addDays(today, 10),
+			});
+			const planned = await assignee.api.item.update({
+				code,
+				startDate: addDays(today, 2),
+			});
+			expect(planned.item.startDate).toBe(addDays(today, 2));
+			expect(
+				(await reporter.api.item.timeline({ code })).at(-1)?.changes?.startDate,
+			).toEqual({ from: null, to: addDays(today, 2) });
+			expect(
+				await codeOf(
+					reporter.api.item.update({ code, startDate: addDays(today, 1) }),
+				),
+			).toBe("FORBIDDEN");
+			// 提单人带着没改的计划开始编辑别的字段：照常保存
+			await reporter.api.item.update({
+				code,
+				title: "补充",
+				startDate: addDays(today, 2),
+			});
+		});
+
+		it("todo 建单可以带计划开始", async () => {
+			const today = todayInAppTz();
+			const { code } = await reporter.api.item.create({
+				type: "todo",
+				title: "排好的事",
+				priority: "P1",
+				startDate: addDays(today, 1),
+				dueDate: addDays(today, 3),
+			});
+			const { item } = await reporter.api.item.byCode({ code });
+			expect(item.startDate).toBe(addDays(today, 1));
+		});
+
+		it("甘特：起点没排就从建单日算；没设期望完成的不出现；排不过来的照样出现", async () => {
+			const me = await actor({ name: "甘特" });
+			const today = todayInAppTz();
+			const fromCreated = await newTicket(reporter, me, {
+				dueDate: addDays(today, 20),
+			});
+			const noDue = await newTicket(reporter, me);
+			const later = await newTicket(reporter, me, {
+				dueDate: addDays(today, 50),
+			});
+			await me.api.item.update({ code: later, startDate: addDays(today, 45) });
+			const late = await newTicket(reporter, me, {
+				dueDate: addDays(today, 5),
+			});
+			await me.api.item.update({ code: late, startDate: addDays(today, 8) });
+
+			const window = async (from: string, to: string) =>
+				(await me.api.item.gantt({ from, to, scope: "assigned" })).map(
+					(i) => i.code,
+				);
+			// 窗口在今天之后：只靠建单日起算的那张也与它相交
+			const soon = await window(addDays(today, 3), addDays(today, 30));
+			expect(soon).toEqual(expect.arrayContaining([fromCreated, late]));
+			expect(soon).not.toContain(noDue);
+			expect(soon).not.toContain(later);
+			// 往后翻：只有排在后面的那张
+			expect(await window(addDays(today, 40), addDays(today, 60))).toEqual([
+				later,
+			]);
 		});
 	});
 

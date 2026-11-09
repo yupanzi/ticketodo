@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
 	Bell,
 	CalendarDays,
+	ChartGantt,
 	ChevronsUpDown,
 	LayoutGrid,
 	ListTodo,
@@ -68,6 +69,7 @@ function useNav() {
 			icon: ListTodo,
 		},
 		{ href: "/calendar", label: "日历", icon: CalendarDays },
+		{ href: "/gantt", label: "甘特图", icon: ChartGantt },
 		{ href: "/notifications", label: "通知", icon: Bell, count: unread },
 	];
 	const admin: NavItem[] =

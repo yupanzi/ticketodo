@@ -18,7 +18,7 @@ ticket 与 todo 的记录、流转、通知与审计。登录只走 authentik（
 src/
 ├── domain/          纯逻辑、无 IO，前后端共用：priority · status（状态机）· policy（权限矩阵）
 │                    · item-code · due（北京时间）· item-list（列表排序与到期筛选的词表）· diff
-│                    · notify（收件人）· mention · identity · audit · schedule（日历月格、视角）
+│                    · notify（收件人）· mention · identity · audit · schedule（日历月格、甘特区间、视角）
 ├── server/
 │   ├── env.ts       环境变量（web / task 两个子集，惰性求值）
 │   ├── log.ts       pino 根 logger · err 序列化与 SQL 参数脱敏
@@ -34,14 +34,14 @@ src/
 │   ├── errors.ts    AppError（服务层不依赖 tRPC）
 │   └── api/         trpc.ts（context · 中间件 · procedure）· context.ts（从请求拼）· root.ts · routers/
 ├── trpc/            query-client · react（客户端 Provider）· server（RSC 预取）
-├── app/             sign-in · (app)/{看板, items, items/new, items/[code], calendar, notifications,
-│                    admin/*}
+├── app/             sign-in · (app)/{看板, items, items/new, items/[code], calendar, gantt,
+│                    notifications, admin/*}
 │                    · api/{auth, trpc, healthz}
 ├── lib/             format（日期显示，一律北京时间）· item-filters（列表筛选 ⇄ 地址栏）· auth-client
 ├── components/      layout（PageHeader · Panel · EmptyState · Field · PropertyList）· chip · badges
 │                    · date-picker（唯一的日期输入）· list-filters（分面筛选）· app-shell（侧栏）
 │                    · item-cache（改单后的缓存规则）· page-skeleton（各路由 loading.tsx 的骨架）
-│                    · item-calendar
+│                    · item-calendar · item-gantt
 │                    · 各页组件；ui/ 是 shadcn 生成后调过尺寸的（Biome 不查）
 ├── proxy.ts         定 x-request-id；页面无会话 cookie 去登录页
 ├── instrumentation.ts  启动校验 · onRequestError 走 pino
@@ -79,8 +79,8 @@ deploy/              values.example.yaml：通用 chart dockerhelm 的部署 val
 - ⚠️ **`services/visibility.ts` 与 `canView` 同一口径**，改一处改两处；`visibility.integration.test.ts`
   对照两者。
 - **改派只有当前负责人与管理员**（提单人不行），todo 没有改派，已关闭的不改派。
-- **优先级由接收方定**（`canSetPriority`）：负责人与管理员；提单人能编辑别的字段，改不了优先级。
-  服务端只在优先级真变了时判（编辑表单会带上原值）。改派保留优先级；todo 转给别人变回待定级。
+- **定级与排期由接收方定**（`canPlan`：优先级、计划开始日期）：负责人与管理员；提单人能编辑别的字段，
+  改不了这两项。服务端只在它们真变了时判（编辑表单会带上原值）。改派保留；todo 转给别人变回待定级。
 - **ticket 必须有负责人**：库里 `assignee_id NOT NULL`，todo 由 CHECK 约束负责人 = 本人。
 
 ### 条目与单号

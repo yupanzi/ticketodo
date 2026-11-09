@@ -41,8 +41,8 @@ import {
 	canConvert,
 	canDelete,
 	canEdit,
+	canPlan,
 	canRestore,
-	canSetPriority,
 	canTransition,
 	canView,
 	type ItemPermissions,
@@ -86,6 +86,8 @@ export interface ItemView {
 	priority: Priority | null;
 	status: ItemStatus;
 	dueDate: string | null;
+	/** 计划开始日期（接收方排期） */
+	startDate: string | null;
 	createdAt: Date;
 	updatedAt: Date;
 	resolvedAt: Date | null;
@@ -109,6 +111,7 @@ const itemColumns = {
 	priority: items.priority,
 	status: items.status,
 	dueDate: items.dueDate,
+	startDate: items.startDate,
 	createdAt: items.createdAt,
 	updatedAt: items.updatedAt,
 	resolvedAt: items.resolvedAt,
@@ -445,6 +448,34 @@ export async function calendarItems(
 	return withTags(ctx.db, rows);
 }
 
+/** 甘特条的起点：计划开始，没排就从建单那天（北京日期）算 */
+const spanStartSql = sql`coalesce(${items.startDate}, (${items.createdAt} AT TIME ZONE ${APP_TIMEZONE})::date)`;
+
+/**
+ * 甘特：有期望完成、且 [起点, 期望完成] 与 [from, to] 有交集的单。起点晚于期望完成（排不过来）时按
+ * 两者之间算，图上标红（见 `ganttSpan`）。
+ */
+export async function ganttItems(
+	ctx: ServiceContext,
+	input: { from: string; to: string; scope: ScheduleScope },
+): Promise<ItemView[]> {
+	const lo = sql`least(${spanStartSql}, ${items.dueDate})`;
+	const hi = sql`greatest(${spanStartSql}, ${items.dueDate})`;
+	const rows = await selectItems(ctx.db)
+		.where(
+			and(
+				visibleItemsWhere(ctx.actor),
+				scheduleScopeWhere(ctx.actor.id, input.scope),
+				isNotNull(items.dueDate),
+				sql`${lo} <= ${input.to}`,
+				sql`${hi} >= ${input.from}`,
+			),
+		)
+		.orderBy(asc(lo), asc(items.dueDate), desc(items.id))
+		.limit(SCHEDULE_LIMIT);
+	return withTags(ctx.db, rows);
+}
+
 /** 管理员回收站 */
 export async function trashItems(ctx: ServiceContext): Promise<ItemView[]> {
 	if (!isAdmin(ctx.actor)) throw forbidden("只有管理员能看回收站");
@@ -548,9 +579,11 @@ export interface CreateItemInput {
 	type: ItemType;
 	title: string;
 	description: string;
-	/** todo 必填；ticket 忽略：建单是待定级，由负责人定（`canSetPriority`） */
+	/** todo 必填；ticket 忽略：建单是待定级，由负责人定（`canPlan`） */
 	priority?: Priority;
 	dueDate: string | null;
+	/** 计划开始：同 priority，只有 todo 建单时带 */
+	startDate?: string | null;
 	/** ticket 必填；todo 忽略（恒为本人） */
 	assigneeId?: string;
 	tags: string[];
@@ -567,6 +600,7 @@ export async function createItem(
 		if (!isTicket && !input.priority)
 			throw new AppError("BAD_REQUEST", "todo 要选优先级");
 		const priority = isTicket ? null : (input.priority ?? null);
+		const startDate = isTicket ? null : (input.startDate ?? null);
 		const assigneeId = isTicket ? (input.assigneeId as string) : ctx.actor.id;
 		const assigneeUser = await requireUser(tx, assigneeId);
 
@@ -580,6 +614,7 @@ export async function createItem(
 				description: input.description,
 				priority,
 				dueDate: input.dueDate,
+				startDate,
 				reporterId: ctx.actor.id,
 				assigneeId,
 			})
@@ -611,6 +646,9 @@ export async function createItem(
 							}
 						: {}),
 					...(row.dueDate ? { dueDate: { from: null, to: row.dueDate } } : {}),
+					...(row.startDate
+						? { startDate: { from: null, to: row.startDate } }
+						: {}),
 					...(tagList.length
 						? {
 								tags: {
@@ -638,6 +676,7 @@ export interface UpdateItemInput {
 	description?: string;
 	priority?: Priority;
 	dueDate?: string | null;
+	startDate?: string | null;
 	tags?: string[];
 	/** 编辑表单打开时的版本；别人先改了就 CONFLICT，不覆盖 */
 	expectedUpdatedAt?: Date;
@@ -648,6 +687,7 @@ const EDITABLE = [
 	"description",
 	"priority",
 	"dueDate",
+	"startDate",
 	"tags",
 ] as const;
 
@@ -679,6 +719,7 @@ export async function updateItem(
 				description: row.description,
 				priority: row.priority,
 				dueDate: row.dueDate,
+				startDate: row.startDate,
 				tags: snapshot(beforeTags),
 			},
 			{
@@ -688,14 +729,17 @@ export async function updateItem(
 					: {}),
 				...(input.priority !== undefined ? { priority: input.priority } : {}),
 				...(input.dueDate !== undefined ? { dueDate: input.dueDate } : {}),
+				...(input.startDate !== undefined
+					? { startDate: input.startDate }
+					: {}),
 				...(afterTags ? { tags: snapshot(afterTags) } : {}),
 			},
 			EDITABLE,
 		);
 		if (!hasChanges(changes)) return;
-		// 只在真改了优先级时判：编辑表单会把原值一起带上
-		if (changes.priority && !canSetPriority(ctx.actor, row))
-			throw forbidden("优先级由负责人定", target(row));
+		// 只在真改了时判：编辑表单会把原值一起带上
+		if ((changes.priority || changes.startDate) && !canPlan(ctx.actor, row))
+			throw forbidden("优先级与计划开始由负责人定", target(row));
 
 		// 只改变了的列；只动了标签也要刷新 updatedAt（编辑冲突检测靠它）
 		const columns: Partial<typeof items.$inferInsert> = {
@@ -707,6 +751,8 @@ export async function updateItem(
 		if (changes.priority && input.priority) columns.priority = input.priority;
 		if (changes.dueDate && input.dueDate !== undefined)
 			columns.dueDate = input.dueDate;
+		if (changes.startDate && input.startDate !== undefined)
+			columns.startDate = input.startDate;
 		await tx.update(items).set(columns).where(eq(items.id, row.id));
 		if (afterTags && changes.tags)
 			await setItemTags(

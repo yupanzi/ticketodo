@@ -11,8 +11,8 @@ import {
 	canDeleteComment,
 	canEdit,
 	canEditComment,
+	canPlan,
 	canRestore,
-	canSetPriority,
 	canView,
 	type ItemRef,
 } from "./policy";
@@ -83,34 +83,34 @@ describe("canEdit", () => {
 	});
 });
 
-describe("canSetPriority（定级由接收方定）", () => {
+describe("canPlan（定级与排期由接收方定）", () => {
 	it("ticket：负责人与管理员；提单人能编辑但不能改优先级", () => {
-		expect(canSetPriority(assignee, ticket())).toBe(true);
-		expect(canSetPriority(admin, ticket())).toBe(true);
+		expect(canPlan(assignee, ticket())).toBe(true);
+		expect(canPlan(admin, ticket())).toBe(true);
 		expect(canEdit(reporter, ticket())).toBe(true);
-		expect(canSetPriority(reporter, ticket())).toBe(false);
-		expect(canSetPriority(bystander, ticket())).toBe(false);
+		expect(canPlan(reporter, ticket())).toBe(false);
+		expect(canPlan(bystander, ticket())).toBe(false);
 	});
 
 	it("提单人自己就是负责人时可以", () => {
-		expect(canSetPriority(reporter, ticket({ assigneeId: "r" }))).toBe(true);
+		expect(canPlan(reporter, ticket({ assigneeId: "r" }))).toBe(true);
 	});
 
 	it("todo：本人与管理员", () => {
-		expect(canSetPriority(reporter, todo())).toBe(true);
-		expect(canSetPriority(admin, todo())).toBe(true);
-		expect(canSetPriority(bystander, todo())).toBe(false);
+		expect(canPlan(reporter, todo())).toBe(true);
+		expect(canPlan(admin, todo())).toBe(true);
+		expect(canPlan(bystander, todo())).toBe(false);
 	});
 
 	it("改派后跟着新负责人走", () => {
 		const reassigned = ticket({ assigneeId: "x" });
-		expect(canSetPriority(bystander, reassigned)).toBe(true);
-		expect(canSetPriority(assignee, reassigned)).toBe(false);
+		expect(canPlan(bystander, reassigned)).toBe(true);
+		expect(canPlan(assignee, reassigned)).toBe(false);
 	});
 
 	it("已删除的谁都不能改", () => {
-		expect(canSetPriority(admin, ticket(deleted))).toBe(false);
-		expect(canSetPriority(assignee, ticket(deleted))).toBe(false);
+		expect(canPlan(admin, ticket(deleted))).toBe(false);
+		expect(canPlan(assignee, ticket(deleted))).toBe(false);
 	});
 });
 

@@ -28,6 +28,7 @@ import {
 	convertItem,
 	createItem,
 	deleteItem,
+	ganttItems,
 	getItem,
 	listItems,
 	mySummary,
@@ -42,7 +43,8 @@ const code = z.string().trim().min(1).max(32);
 const userId = z.string().min(1).max(64);
 const title = z.string().trim().min(1, "标题不能为空").max(TITLE_MAX_LENGTH);
 const description = z.string().max(DESCRIPTION_MAX_LENGTH);
-const dueDate = z.iso.date().nullable();
+/** `YYYY-MM-DD` 或 null（不设） */
+const nullableDay = z.iso.date().nullable();
 const tagNames = z.array(z.string().max(TAG_NAME_MAX_LENGTH)).max(10);
 
 /** 日历、甘特的区间：起止含当天，最多 `SCHEDULE_MAX_DAYS` 天（一屏画不下更多） */
@@ -75,7 +77,7 @@ const detailAfter = async (
 const createFields = {
 	title,
 	description: description.default(""),
-	dueDate: dueDate.default(null),
+	dueDate: nullableDay.default(null),
 	tags: tagNames.default([]),
 };
 
@@ -93,6 +95,7 @@ export const itemRouter = createTRPCRouter({
 				z.object({
 					type: z.literal("todo"),
 					priority: z.enum(PRIORITIES),
+					startDate: nullableDay.default(null),
 					...createFields,
 				}),
 			]),
@@ -146,6 +149,10 @@ export const itemRouter = createTRPCRouter({
 		.input(scheduleRange)
 		.query(({ ctx, input }) => calendarItems(ctx.svc, input)),
 
+	gantt: protectedProcedure
+		.input(scheduleRange)
+		.query(({ ctx, input }) => ganttItems(ctx.svc, input)),
+
 	timeline: protectedProcedure
 		.input(z.object({ code }))
 		.query(({ ctx, input }) => timeline(ctx.svc, input.code)),
@@ -159,7 +166,8 @@ export const itemRouter = createTRPCRouter({
 				title: title.optional(),
 				description: description.optional(),
 				priority: z.enum(PRIORITIES).optional(),
-				dueDate: dueDate.optional(),
+				dueDate: nullableDay.optional(),
+				startDate: nullableDay.optional(),
 				tags: tagNames.optional(),
 			}),
 		)

@@ -1,0 +1,1 @@
+ALTER TABLE "ticketodo_item" ADD COLUMN "start_date" date;

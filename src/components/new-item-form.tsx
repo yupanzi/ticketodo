@@ -90,6 +90,7 @@ export function NewItemForm({
 		description: "",
 		priority: initialPriority,
 		dueDate: "",
+		startDate: "",
 		tags: [],
 	});
 
@@ -121,13 +122,14 @@ export function NewItemForm({
 						dueDate: fields.dueDate || null,
 						tags: fields.tags,
 					};
-					// ticket 不带优先级：建单是待定级，由负责人定
+					// ticket 不带优先级与计划开始：建单是待定级，由负责人定
 					create.mutate(
 						type === "ticket" && assignee
 							? { type, assigneeId: assignee.id, ...common }
 							: {
 									type: "todo",
 									priority: fields.priority ?? initialPriority,
+									startDate: fields.startDate || null,
 									...common,
 								},
 					);
@@ -153,7 +155,7 @@ export function NewItemForm({
 				)}
 				<ItemFields
 					onChange={setFields}
-					showPriority={type === "todo"}
+					planning={type === "todo"}
 					value={fields}
 				/>
 				<div className="flex gap-2 border-t pt-5">

@@ -51,3 +51,48 @@ export function monthGridRange(month: string): { from: string; to: string } {
 		to: weeks.at(-1)?.[6] ?? endOfMonth(`${month}-01`),
 	};
 }
+
+// ---------- 甘特 ----------
+
+/** 一屏看 6 周 */
+export const GANTT_DAYS = 42;
+
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** 合法的 `YYYY-MM-DD`：Date 会把 2-30 悄悄顺延成 3 月 2 日、13 月则是 Invalid Date，都不算 */
+function isDay(raw: string): boolean {
+	if (!DAY.test(raw)) return false;
+	const d = new Date(`${raw}T00:00:00Z`);
+	return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === raw;
+}
+
+/** 地址栏的 `?from=`：对齐到周一；没给或不合法就从上周一开始（回看一周，主要往后看） */
+export function parseGanttStart(
+	raw: string | undefined,
+	today: string,
+): string {
+	return raw && isDay(raw) ? startOfWeek(raw) : defaultGanttStart(today);
+}
+
+export function defaultGanttStart(today: string): string {
+	return addDays(startOfWeek(today), -7);
+}
+
+export function ganttRange(start: string): { from: string; to: string } {
+	return { from: start, to: addDays(start, GANTT_DAYS - 1) };
+}
+
+/**
+ * 甘特条的起止（含两端）：起点是计划开始，没排就用建单日。起点晚于期望完成说明排不过来：
+ * 两头对调画出来，并标 `late`。
+ */
+export function ganttSpan(item: {
+	startDate: string | null;
+	dueDate: string;
+	createdDay: string;
+}): { start: string; end: string; late: boolean } {
+	const start = item.startDate ?? item.createdDay;
+	return start <= item.dueDate
+		? { start, end: item.dueDate, late: false }
+		: { start: item.dueDate, end: start, late: item.startDate !== null };
+}
