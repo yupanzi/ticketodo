@@ -30,6 +30,7 @@ import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { dueState, todayInAppTz } from "~/domain/due";
+import { type BoardScope, DEFAULT_BOARD_SCOPE } from "~/domain/item-list";
 import { canEdit } from "~/domain/policy";
 import { PRIORITIES, PRIORITY_META, type Priority } from "~/domain/priority";
 import { listHref } from "~/lib/item-filters";
@@ -48,9 +49,7 @@ import { type Me, useMe } from "./me-context";
 import { UserAvatar } from "./user-avatar";
 
 type BoardItem = RouterOutputs["item"]["board"][number];
-type Scope = "mine" | "reported" | "all";
-
-const SCOPES: { value: Scope; label: string }[] = [
+const SCOPES: { value: BoardScope; label: string }[] = [
 	{ value: "mine", label: "需要我处理" },
 	{ value: "reported", label: "我提的" },
 	{ value: "all", label: "全部" },
@@ -311,7 +310,7 @@ const ANNOUNCEMENTS: Announcements = {
 export function QuadrantBoard() {
 	const trpc = useTRPC();
 	const qc = useQueryClient();
-	const [scope, setScope] = useState<Scope>("mine");
+	const [scope, setScope] = useState(DEFAULT_BOARD_SCOPE);
 	const boardKey = trpc.item.board.queryKey({ scope });
 	const { data, isLoading } = useQuery(trpc.item.board.queryOptions({ scope }));
 	const today = todayInAppTz();
@@ -358,7 +357,7 @@ export function QuadrantBoard() {
 		<>
 			<PageHeader
 				actions={
-					<Tabs onValueChange={(v) => setScope(v as Scope)} value={scope}>
+					<Tabs onValueChange={(v) => setScope(v as BoardScope)} value={scope}>
 						<TabsList>
 							{SCOPES.map((s) => (
 								<TabsTrigger key={s.value} value={s.value}>

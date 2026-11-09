@@ -147,12 +147,13 @@ function CommentRow({ c, code }: { c: Comment; code: string }) {
 	const trpc = useTRPC();
 	const qc = useQueryClient();
 	const [editing, setEditing] = useState(false);
-	const refresh = () =>
-		qc.invalidateQueries({ queryKey: trpc.comment.list.queryKey({ code }) });
+	// 接口回的就是最新列表（见 commentRouter），直接换上，不再查一趟
+	const replace = (list: Comment[]) =>
+		qc.setQueryData(trpc.comment.list.queryKey({ code }), list);
 	const edit = useMutation(
 		trpc.comment.edit.mutationOptions({
-			onSuccess: async () => {
-				await refresh();
+			onSuccess: (list) => {
+				replace(list);
 				setEditing(false);
 			},
 			onError: (err) => toast.error(err.message),
@@ -160,7 +161,7 @@ function CommentRow({ c, code }: { c: Comment; code: string }) {
 	);
 	const remove = useMutation(
 		trpc.comment.delete.mutationOptions({
-			onSuccess: refresh,
+			onSuccess: replace,
 			onError: (err) => toast.error(err.message),
 		}),
 	);
@@ -234,10 +235,8 @@ export function ItemActivity({
 	const comments = useQuery(trpc.comment.list.queryOptions({ code }));
 	const add = useMutation(
 		trpc.comment.add.mutationOptions({
-			onSuccess: () =>
-				qc.invalidateQueries({
-					queryKey: trpc.comment.list.queryKey({ code }),
-				}),
+			onSuccess: (list) =>
+				qc.setQueryData(trpc.comment.list.queryKey({ code }), list),
 			onError: (err) => toast.error(err.message),
 		}),
 	);

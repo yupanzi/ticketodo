@@ -156,12 +156,13 @@ async function lockComment(tx: Tx, ctx: ServiceContext, id: number) {
 	return { c, item };
 }
 
+/** 回所属单号：router 据此回最新评论列表 */
 export async function editComment(
 	ctx: ServiceContext,
 	id: number,
 	body: string,
-): Promise<void> {
-	await ctx.db.transaction(async (tx) => {
+): Promise<string> {
+	return ctx.db.transaction(async (tx) => {
 		const { c, item } = await lockComment(tx, ctx, id);
 		if (!canEditComment(ctx.actor, c))
 			throw forbidden("只能改自己的评论", {
@@ -169,7 +170,7 @@ export async function editComment(
 				targetId: String(id),
 				targetName: item.code,
 			});
-		if (c.body === body) return;
+		if (c.body === body) return item.code;
 		const mentions = await mentionTargets(tx, item, body);
 		await tx
 			.update(comments)
@@ -194,14 +195,16 @@ export async function editComment(
 			ctx.actor,
 			{ excerpt: excerpt(body) },
 		);
+		return item.code;
 	});
 }
 
+/** 回所属单号，同 `editComment` */
 export async function deleteComment(
 	ctx: ServiceContext,
 	id: number,
-): Promise<void> {
-	await ctx.db.transaction(async (tx) => {
+): Promise<string> {
+	return ctx.db.transaction(async (tx) => {
 		const { c, item } = await lockComment(tx, ctx, id);
 		if (!canDeleteComment(ctx.actor, c))
 			throw forbidden("只能删自己的评论", {
@@ -221,5 +224,6 @@ export async function deleteComment(
 			details: { changes: { body: { from: c.body, to: null } } },
 			...actorAudit(ctx),
 		});
+		return item.code;
 	});
 }

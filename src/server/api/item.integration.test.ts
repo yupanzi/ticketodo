@@ -578,10 +578,15 @@ describe.skipIf(!hasTestDb)("item API", () => {
 
 		it("编辑评论只通知新加的 @；只能改自己的", async () => {
 			const code = await newTicket(reporter, assignee);
-			const { id } = await reporter.api.comment.add({
-				code,
-				body: `${formatMention("负责人", assignee.user.id)} 先看`,
-			});
+			// add 回这张单的最新评论列表，刚发的在最后
+			const created = (
+				await reporter.api.comment.add({
+					code,
+					body: `${formatMention("负责人", assignee.user.id)} 先看`,
+				})
+			).at(-1);
+			if (!created) throw new Error("add 应回含新评论的列表");
+			const { id } = created;
 			const assigneeBefore = (await notificationsOf(assignee.user.id)).length;
 			await reporter.api.comment.edit({
 				id,

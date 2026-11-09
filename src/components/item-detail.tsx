@@ -55,6 +55,7 @@ import {
 } from "./badges";
 import { Chip } from "./chip";
 import { ItemActivity } from "./item-activity";
+import { useItemCache } from "./item-cache";
 import { ItemFields, type ItemFieldValues } from "./item-fields";
 import {
 	EmptyState,
@@ -67,17 +68,8 @@ import { Markdown } from "./markdown";
 import { UserChip } from "./user-avatar";
 import { type PickedUser, UserPicker } from "./user-picker";
 
-type Item = RouterOutputs["item"]["byCode"]["item"];
-
-function useRefresh(code: string) {
-	const trpc = useTRPC();
-	const qc = useQueryClient();
-	return () =>
-		Promise.all([
-			qc.invalidateQueries({ queryKey: trpc.item.pathKey() }),
-			qc.invalidateQueries({ queryKey: trpc.comment.list.queryKey({ code }) }),
-		]);
-}
+type Detail = RouterOutputs["item"]["byCode"];
+type Item = Detail["item"];
 
 /**
  * 状态按钮的分量：「往前推进」的那一步是主按钮（全页只有一个），退回 / 打回是次要，撤回最弱。
@@ -100,19 +92,20 @@ function emphasisOf(
 	return forward ? "primary" : "secondary";
 }
 
-function StatusActions({
-	item,
-	statuses,
-}: {
-	item: Item;
-	statuses: ItemStatus[];
-}) {
+function StatusActions({ detail }: { detail: Detail }) {
 	const trpc = useTRPC();
-	const refresh = useRefresh(item.code);
+	const cache = useItemCache();
+	const { item, permissions } = detail;
+	const statuses = permissions.statuses;
 	const transition = useMutation(
 		trpc.item.transition.mutationOptions({
-			onSuccess: refresh,
-			onError: (err) => toast.error(err.message),
+			// 状态是最常点的：先改界面，失败回滚
+			onMutate: ({ to }) => cache.optimisticStatus(detail, to),
+			onSuccess: cache.apply,
+			onError: (err, _vars, rollback) => {
+				rollback?.();
+				toast.error(err.message);
+			},
 		}),
 	);
 	// 全页只留一个主按钮：第一个「往前推进」的
@@ -151,7 +144,7 @@ function EditDialog({
 	onOpenChange: (o: boolean) => void;
 }) {
 	const trpc = useTRPC();
-	const refresh = useRefresh(item.code);
+	const cache = useItemCache();
 	const initial = (): ItemFieldValues => ({
 		title: item.title,
 		description: item.description,
@@ -162,8 +155,8 @@ function EditDialog({
 	const [fields, setFields] = useState(initial);
 	const update = useMutation(
 		trpc.item.update.mutationOptions({
-			onSuccess: async () => {
-				await refresh();
+			onSuccess: (detail) => {
+				cache.apply(detail);
 				onOpenChange(false);
 			},
 			onError: (err) => toast.error(err.message),
@@ -235,11 +228,11 @@ function PickAssigneeDialog({
 	onOpenChange: (o: boolean) => void;
 }) {
 	const trpc = useTRPC();
-	const refresh = useRefresh(item.code);
+	const cache = useItemCache();
 	const [picked, setPicked] = useState<PickedUser | null>(null);
 	const done = {
-		onSuccess: async () => {
-			await refresh();
+		onSuccess: (detail: Detail) => {
+			cache.apply(detail);
 			onOpenChange(false);
 			setPicked(null);
 		},
@@ -297,8 +290,8 @@ function DeleteDialog({
 	const qc = useQueryClient();
 	const remove = useMutation(
 		trpc.item.delete.mutationOptions({
-			onSuccess: async () => {
-				await qc.invalidateQueries({ queryKey: trpc.item.pathKey() });
+			onSuccess: () => {
+				void qc.invalidateQueries({ queryKey: trpc.item.pathKey() });
 				toast.success(`${item.code} 已移入回收站`);
 				router.push("/");
 			},
@@ -332,14 +325,14 @@ type DialogKind = "edit" | "assign" | "convert" | "delete" | null;
 
 export function ItemDetail({ code }: { code: string }) {
 	const trpc = useTRPC();
-	const refresh = useRefresh(code);
+	const cache = useItemCache();
 	const [dialog, setDialog] = useState<DialogKind>(null);
 	const { data, error, isLoading } = useQuery(
 		trpc.item.byCode.queryOptions({ code }),
 	);
 	const restore = useMutation(
 		trpc.item.restore.mutationOptions({
-			onSuccess: refresh,
+			onSuccess: cache.apply,
 			onError: (err) => toast.error(err.message),
 		}),
 	);
@@ -395,7 +388,7 @@ export function ItemDetail({ code }: { code: string }) {
 			</PageHeader>
 
 			<div className="mb-6 flex flex-wrap items-center gap-2">
-				<StatusActions item={item} statuses={can.statuses} />
+				<StatusActions detail={data} />
 				{can.statuses.length > 0 && (can.edit || can.assign || can.convert) && (
 					<span aria-hidden className="mx-1 h-6 w-px bg-border" />
 				)}

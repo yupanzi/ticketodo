@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { ListTodo, Ticket } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useId, useState } from "react";
@@ -12,6 +12,7 @@ import type { Priority } from "~/domain/priority";
 import { cn } from "~/lib/utils";
 import { useTRPC } from "~/trpc/react";
 
+import { useItemCache } from "./item-cache";
 import { ItemFields, type ItemFieldValues } from "./item-fields";
 import { Field, Panel } from "./layout";
 import { type PickedUser, UserPicker } from "./user-picker";
@@ -80,7 +81,7 @@ export function NewItemForm({
 	initialPriority: Priority;
 }) {
 	const trpc = useTRPC();
-	const qc = useQueryClient();
+	const cache = useItemCache();
 	const router = useRouter();
 	const [type, setType] = useState<ItemType>(initialType);
 	const [assignee, setAssignee] = useState<PickedUser | null>(null);
@@ -94,8 +95,9 @@ export function NewItemForm({
 
 	const create = useMutation(
 		trpc.item.create.mutationOptions({
-			onSuccess: async ({ code }) => {
-				await qc.invalidateQueries({ queryKey: trpc.item.pathKey() });
+			// 详情先写进缓存再跳：到了详情页不用再等一次查询
+			onSuccess: ({ code, ...detail }) => {
+				cache.apply(detail);
 				toast.success(`已创建 ${code}`);
 				router.push(`/items/${code}`);
 			},

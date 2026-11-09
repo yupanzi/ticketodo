@@ -23,6 +23,12 @@ export const NATURAL_DIR: Record<ItemSortBy, SortDir> = {
 /** 默认先看重要的，同级里先看快到期的（与看板一致） */
 export const DEFAULT_SORT: ItemSort = { by: "priority", dir: "asc" };
 
+/** 看板视角（mine / reported / all 的口径见 `boardItems`） */
+export const BOARD_SCOPES = ["mine", "reported", "all"] as const;
+export type BoardScope = (typeof BOARD_SCOPES)[number];
+/** 服务端预取与看板初始 state 都读它：两边不一致，预取的就白取了 */
+export const DEFAULT_BOARD_SCOPE: BoardScope = "mine";
+
 /**
  * 到期快捷项：overdue / today / next7 只算进行中的（还要做的事），与概览卡片、到期提醒同一口径；
  * none = 没设期望完成日期。自定义范围不限状态，交给状态筛选。

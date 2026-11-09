@@ -39,6 +39,7 @@ const code = z.string().trim().min(1).max(32);
 const body = z.string().trim().min(1, "评论不能为空").max(COMMENT_MAX_LENGTH);
 const id = z.number().int().positive();
 
+/** 评论的变更都回这张单的最新评论列表（与 list 同形），理由同 item router 的 `detailAfter` */
 export const commentRouter = createTRPCRouter({
 	list: protectedProcedure
 		.input(z.object({ code }))
@@ -46,15 +47,22 @@ export const commentRouter = createTRPCRouter({
 	add: protectedProcedure
 		.meta({ audit: AUDIT_ACTIONS.commentCreate })
 		.input(z.object({ code, body }))
-		.mutation(({ ctx, input }) => addComment(ctx.svc, input.code, input.body)),
+		.mutation(async ({ ctx, input }) => {
+			await addComment(ctx.svc, input.code, input.body);
+			return listComments(ctx.svc, input.code);
+		}),
 	edit: protectedProcedure
 		.meta({ audit: AUDIT_ACTIONS.commentUpdate })
 		.input(z.object({ id, body }))
-		.mutation(({ ctx, input }) => editComment(ctx.svc, input.id, input.body)),
+		.mutation(async ({ ctx, input }) =>
+			listComments(ctx.svc, await editComment(ctx.svc, input.id, input.body)),
+		),
 	delete: protectedProcedure
 		.meta({ audit: AUDIT_ACTIONS.commentDelete })
 		.input(z.object({ id }))
-		.mutation(({ ctx, input }) => deleteComment(ctx.svc, input.id)),
+		.mutation(async ({ ctx, input }) =>
+			listComments(ctx.svc, await deleteComment(ctx.svc, input.id)),
+		),
 });
 
 export const tagRouter = createTRPCRouter({

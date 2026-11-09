@@ -6,7 +6,12 @@ import {
 	ITEM_TYPES,
 	TITLE_MAX_LENGTH,
 } from "~/domain/item";
-import { DUE_PRESETS, ITEM_SORTS, SORT_DIRS } from "~/domain/item-list";
+import {
+	BOARD_SCOPES,
+	DUE_PRESETS,
+	ITEM_SORTS,
+	SORT_DIRS,
+} from "~/domain/item-list";
 import { PRIORITIES } from "~/domain/priority";
 import { TAG_NAME_MAX_LENGTH } from "~/domain/tag";
 import {
@@ -38,6 +43,19 @@ const description = z.string().max(DESCRIPTION_MAX_LENGTH);
 const dueDate = z.iso.date().nullable();
 const tagNames = z.array(z.string().max(TAG_NAME_MAX_LENGTH)).max(10);
 
+/**
+ * 改单的 mutation 都回最新详情（与 byCode 同形）：客户端拿它当场更新详情页，不用改完再查一趟。
+ * 服务端多一次查库是毫秒级，省下的是一个网络往返。
+ */
+const detailAfter = async (
+	svc: Parameters<typeof getItem>[0],
+	code: string,
+	write: Promise<unknown>,
+) => {
+	await write;
+	return getItem(svc, code);
+};
+
 const createFields = {
 	title,
 	description: description.default(""),
@@ -60,7 +78,10 @@ export const itemRouter = createTRPCRouter({
 				z.object({ type: z.literal("todo"), ...createFields }),
 			]),
 		)
-		.mutation(({ ctx, input }) => createItem(ctx.svc, input)),
+		.mutation(async ({ ctx, input }) => {
+			const { code } = await createItem(ctx.svc, input);
+			return { code, ...(await getItem(ctx.svc, code)) };
+		}),
 
 	byCode: protectedProcedure
 		.input(z.object({ code }))
@@ -99,7 +120,7 @@ export const itemRouter = createTRPCRouter({
 	summary: protectedProcedure.query(({ ctx }) => mySummary(ctx.svc)),
 
 	board: protectedProcedure
-		.input(z.object({ scope: z.enum(["mine", "reported", "all"]) }))
+		.input(z.object({ scope: z.enum(BOARD_SCOPES) }))
 		.query(({ ctx, input }) => boardItems(ctx.svc, input.scope)),
 
 	timeline: protectedProcedure
@@ -120,28 +141,40 @@ export const itemRouter = createTRPCRouter({
 			}),
 		)
 		.mutation(({ ctx, input: { code, ...patch } }) =>
-			updateItem(ctx.svc, code, patch),
+			detailAfter(ctx.svc, code, updateItem(ctx.svc, code, patch)),
 		),
 
 	transition: protectedProcedure
 		.meta({ audit: AUDIT_ACTIONS.itemStatus })
 		.input(z.object({ code, to: z.enum(ITEM_STATUSES) }))
 		.mutation(({ ctx, input }) =>
-			transitionItem(ctx.svc, input.code, input.to),
+			detailAfter(
+				ctx.svc,
+				input.code,
+				transitionItem(ctx.svc, input.code, input.to),
+			),
 		),
 
 	assign: protectedProcedure
 		.meta({ audit: AUDIT_ACTIONS.itemAssign })
 		.input(z.object({ code, assigneeId: userId }))
 		.mutation(({ ctx, input }) =>
-			assignItem(ctx.svc, input.code, input.assigneeId),
+			detailAfter(
+				ctx.svc,
+				input.code,
+				assignItem(ctx.svc, input.code, input.assigneeId),
+			),
 		),
 
 	convert: protectedProcedure
 		.meta({ audit: AUDIT_ACTIONS.itemConvert })
 		.input(z.object({ code, assigneeId: userId }))
 		.mutation(({ ctx, input }) =>
-			convertItem(ctx.svc, input.code, input.assigneeId),
+			detailAfter(
+				ctx.svc,
+				input.code,
+				convertItem(ctx.svc, input.code, input.assigneeId),
+			),
 		),
 
 	delete: protectedProcedure
@@ -152,7 +185,9 @@ export const itemRouter = createTRPCRouter({
 	restore: adminProcedure
 		.meta({ audit: AUDIT_ACTIONS.itemRestore })
 		.input(z.object({ code }))
-		.mutation(({ ctx, input }) => restoreItem(ctx.svc, input.code)),
+		.mutation(({ ctx, input }) =>
+			detailAfter(ctx.svc, input.code, restoreItem(ctx.svc, input.code)),
+		),
 
 	trash: adminProcedure.query(({ ctx }) => trashItems(ctx.svc)),
 });

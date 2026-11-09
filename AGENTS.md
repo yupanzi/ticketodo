@@ -39,6 +39,7 @@ src/
 ├── lib/             format（日期显示，一律北京时间）· item-filters（列表筛选 ⇄ 地址栏）· auth-client
 ├── components/      layout（PageHeader · Panel · EmptyState · Field · PropertyList）· chip · badges
 │                    · date-picker（唯一的日期输入）· list-filters（分面筛选）· app-shell（侧栏）
+│                    · item-cache（改单后的缓存规则）· page-skeleton（各路由 loading.tsx 的骨架）
 │                    · 各页组件；ui/ 是 shadcn 生成后调过尺寸的（Biome 不查）
 ├── proxy.ts         定 x-request-id；页面无会话 cookie 去登录页
 ├── instrumentation.ts  启动校验 · onRequestError 走 pino
@@ -136,6 +137,15 @@ deploy/              values.example.yaml：通用 chart dockerhelm 的部署 val
 - ⚠️ **`ui/` 改过尺寸**（button · input · select · tabs · toggle · table · badge · command ·
   input-group · calendar）：`shadcn add` 提示覆盖已有文件时一律拒绝；要升级某个组件先 diff，再把尺寸改回 token。
 
+### 交互快慢（用户到服务器一个往返就是几百毫秒，慢在往返次数与没反馈，不在服务器）
+
+- **每个路由都有 `loading.tsx`**（`page-skeleton.tsx`）：没有它点链接毫无反馈，Next 也不预取动态页面。
+  新页面一并加，骨架网格与真实页面一致。
+- **页面数据在 RSC 里预取**（`HydrateClient`），别留给客户端挂载后再查（多一个串行往返）。预取的 key
+  必须与客户端一致：列表入参走 `listQueryInput`，看板视角走 `DEFAULT_BOARD_SCOPE`。
+- **改单的 mutation 回最新数据**（item 回详情、评论回列表），客户端用 `useItemCache` 换上；状态变更乐观
+  更新（按钮集合用 `itemPermissions` 现算）。⚠️ 后台刷新别 await：按钮会多转一个往返。
+
 ### 构建期与运行时
 
 - ⚠️ **构建期零 env**：模块顶层别读 env、别建 better-auth / pg 实例（`getServerEnv` / `getDb` /
@@ -213,3 +223,13 @@ mv .env /tmp/x && pnpm build; mv /tmp/x .env   # 构建期零 env
 
 写 WHY 不写 WHAT，一条理由一两行。不写历史与过程；要防回退就写成规则：「别加回 X：理由」。
 同一条理由只写一处，别处引用。中英按上下文混写。
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+## This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

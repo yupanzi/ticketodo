@@ -117,6 +117,23 @@ export function toSearch(f: ListFilterState): string {
 		.join("&")}`;
 }
 
+/**
+ * 筛选状态 → `item.list` 的入参。列表页的服务端预取与 ItemsTable 都用它：两边拼出的查询 key
+ * 不一致，预取的就白取了。
+ */
+export function listQueryInput(f: ListFilterState) {
+	return {
+		...f,
+		due: f.due ?? undefined,
+		q: f.q.trim() || undefined,
+		limit: 50,
+	};
+}
+
+/** 列表分页游标：服务端预取与 ItemsTable 共用 */
+export const nextListCursor = (last: { nextCursor?: number | null }) =>
+	last.nextCursor ?? undefined;
+
 /** 别处跳到列表（如首页概览卡片）：只写想改的项，其余用默认 */
 export function listHref(patch: Partial<ListFilterState>): string {
 	return `/items${toSearch({ ...DEFAULT_FILTERS, ...patch })}`;

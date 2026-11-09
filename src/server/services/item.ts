@@ -29,6 +29,7 @@ import {
 } from "~/domain/item";
 import { parseItemCode } from "~/domain/item-code";
 import {
+	type BoardScope,
 	DEFAULT_SORT,
 	type DueFilter,
 	type ItemSort,
@@ -347,8 +348,6 @@ export async function mySummary(ctx: ServiceContext): Promise<MySummary> {
 		.where(visibleItemsWhere(ctx.actor));
 	return row ?? { overdue: 0, dueToday: 0, awaitingConfirmation: 0, active: 0 };
 }
-
-export type BoardScope = "mine" | "reported" | "all";
 
 /** 看板上限：四象限一屏，再多就该去列表筛了 */
 const BOARD_LIMIT = 500;

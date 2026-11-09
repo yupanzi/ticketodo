@@ -43,6 +43,8 @@ import {
 	DEFAULT_FILTERS,
 	hasActiveFilters,
 	type ListFilterState,
+	listQueryInput,
+	nextListCursor,
 	toSearch,
 } from "~/lib/item-filters";
 import { cn } from "~/lib/utils";
@@ -167,13 +169,10 @@ export function ItemsTable({ initial }: { initial: ListFilterState }) {
 
 	const list = useInfiniteQuery(
 		trpc.item.list.infiniteQueryOptions(
+			listQueryInput({ ...f, q: deferredQ }),
 			{
-				...f,
-				due: f.due ?? undefined,
-				q: deferredQ.trim() || undefined,
-				limit: 50,
+				getNextPageParam: nextListCursor,
 			},
-			{ getNextPageParam: (last) => last.nextCursor ?? undefined },
 		),
 	);
 	const rows = list.data?.pages.flatMap((p) => p.items) ?? [];
