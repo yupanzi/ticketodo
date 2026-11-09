@@ -18,7 +18,7 @@ ticket 与 todo 的记录、流转、通知与审计。登录只走 authentik（
 src/
 ├── domain/          纯逻辑、无 IO，前后端共用：priority · status（状态机）· policy（权限矩阵）
 │                    · item-code · due（北京时间）· item-list（列表排序与到期筛选的词表）· diff
-│                    · notify（收件人）· mention · identity · audit
+│                    · notify（收件人）· mention · identity · audit · schedule（日历月格、视角）
 ├── server/
 │   ├── env.ts       环境变量（web / task 两个子集，惰性求值）
 │   ├── log.ts       pino 根 logger · err 序列化与 SQL 参数脱敏
@@ -34,12 +34,14 @@ src/
 │   ├── errors.ts    AppError（服务层不依赖 tRPC）
 │   └── api/         trpc.ts（context · 中间件 · procedure）· context.ts（从请求拼）· root.ts · routers/
 ├── trpc/            query-client · react（客户端 Provider）· server（RSC 预取）
-├── app/             sign-in · (app)/{看板, items, items/new, items/[code], notifications, admin/*}
+├── app/             sign-in · (app)/{看板, items, items/new, items/[code], calendar, notifications,
+│                    admin/*}
 │                    · api/{auth, trpc, healthz}
 ├── lib/             format（日期显示，一律北京时间）· item-filters（列表筛选 ⇄ 地址栏）· auth-client
 ├── components/      layout（PageHeader · Panel · EmptyState · Field · PropertyList）· chip · badges
 │                    · date-picker（唯一的日期输入）· list-filters（分面筛选）· app-shell（侧栏）
 │                    · item-cache（改单后的缓存规则）· page-skeleton（各路由 loading.tsx 的骨架）
+│                    · item-calendar
 │                    · 各页组件；ui/ 是 shadcn 生成后调过尺寸的（Biome 不查）
 ├── proxy.ts         定 x-request-id；页面无会话 cookie 去登录页
 ├── instrumentation.ts  启动校验 · onRequestError 走 pino

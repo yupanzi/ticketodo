@@ -13,6 +13,7 @@ import {
 	SORT_DIRS,
 } from "~/domain/item-list";
 import { PRIORITIES, PRIORITY_FILTERS } from "~/domain/priority";
+import { SCHEDULE_MAX_DAYS, SCHEDULE_SCOPES } from "~/domain/schedule";
 import { TAG_NAME_MAX_LENGTH } from "~/domain/tag";
 import {
 	adminProcedure,
@@ -23,6 +24,7 @@ import { AUDIT_ACTIONS } from "~/server/resources";
 import {
 	assignItem,
 	boardItems,
+	calendarItems,
 	convertItem,
 	createItem,
 	deleteItem,
@@ -42,6 +44,20 @@ const title = z.string().trim().min(1, "标题不能为空").max(TITLE_MAX_LENGT
 const description = z.string().max(DESCRIPTION_MAX_LENGTH);
 const dueDate = z.iso.date().nullable();
 const tagNames = z.array(z.string().max(TAG_NAME_MAX_LENGTH)).max(10);
+
+/** 日历、甘特的区间：起止含当天，最多 `SCHEDULE_MAX_DAYS` 天（一屏画不下更多） */
+const scheduleRange = z
+	.object({
+		from: z.iso.date(),
+		to: z.iso.date(),
+		scope: z.enum(SCHEDULE_SCOPES),
+	})
+	.refine(
+		(r) =>
+			r.from <= r.to &&
+			(Date.parse(r.to) - Date.parse(r.from)) / 86_400_000 < SCHEDULE_MAX_DAYS,
+		`起止要有序，最多 ${SCHEDULE_MAX_DAYS} 天`,
+	);
 
 /**
  * 改单的 mutation 都回最新详情（与 byCode 同形）：客户端拿它当场更新详情页，不用改完再查一趟。
@@ -125,6 +141,10 @@ export const itemRouter = createTRPCRouter({
 	board: protectedProcedure
 		.input(z.object({ scope: z.enum(BOARD_SCOPES) }))
 		.query(({ ctx, input }) => boardItems(ctx.svc, input.scope)),
+
+	calendar: protectedProcedure
+		.input(scheduleRange)
+		.query(({ ctx, input }) => calendarItems(ctx.svc, input)),
 
 	timeline: protectedProcedure
 		.input(z.object({ code }))

@@ -1,0 +1,53 @@
+import { addDays, endOfMonth, weekdayOf } from "./due";
+
+/**
+ * 日历与甘特：日期一律 `YYYY-MM-DD` / `YYYY-MM` 字符串，按 UTC 算，与运行环境时区无关（同 `due.ts`）。
+ */
+
+/** 日历与甘特的视角：按人分。看板的 mine 还含「等我确认关闭」，这里只看负责与提出 */
+export const SCHEDULE_SCOPES = ["assigned", "reported", "all"] as const;
+export type ScheduleScope = (typeof SCHEDULE_SCOPES)[number];
+export const DEFAULT_SCHEDULE_SCOPE: ScheduleScope = "assigned";
+
+/** 一次最多查多少天：一屏月历 6 周、甘特 8 周，留点余量 */
+export const SCHEDULE_MAX_DAYS = 62;
+
+const MONTH = /^(\d{4})-(0[1-9]|1[0-2])$/;
+
+/** 地址栏的 `?month=`：不合法就回落到今天所在的月 */
+export function parseMonth(raw: string | undefined, today: string): string {
+	return raw && MONTH.test(raw) ? raw : today.slice(0, 7);
+}
+
+export function shiftMonth(month: string, n: number): string {
+	const d = new Date(`${month}-01T00:00:00Z`);
+	d.setUTCMonth(d.getUTCMonth() + n);
+	return d.toISOString().slice(0, 7);
+}
+
+/** 周一开头 */
+export function startOfWeek(day: string): string {
+	return addDays(day, -((weekdayOf(day) + 6) % 7));
+}
+
+/**
+ * 月历要画的格子：从 1 号所在周的周一，到月末所在周的周日，按周切开（5 或 6 周）。
+ * 前后补的是相邻月的日子，照样显示当天到期的单。
+ */
+export function monthGrid(month: string): string[][] {
+	const first = `${month}-01`;
+	const last = addDays(startOfWeek(endOfMonth(first)), 6);
+	const weeks: string[][] = [];
+	for (let day = startOfWeek(first); day <= last; day = addDays(day, 7))
+		weeks.push(Array.from({ length: 7 }, (_, i) => addDays(day, i)));
+	return weeks;
+}
+
+/** 月历要查的区间：与 `monthGrid` 的首尾一致 */
+export function monthGridRange(month: string): { from: string; to: string } {
+	const weeks = monthGrid(month);
+	return {
+		from: weeks[0]?.[0] ?? `${month}-01`,
+		to: weeks.at(-1)?.[6] ?? endOfMonth(`${month}-01`),
+	};
+}

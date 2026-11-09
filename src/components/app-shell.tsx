@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import {
 	Bell,
+	CalendarDays,
 	ChevronsUpDown,
 	LayoutGrid,
 	ListTodo,
@@ -66,6 +67,7 @@ function useNav() {
 			label: "全部单子",
 			icon: ListTodo,
 		},
+		{ href: "/calendar", label: "日历", icon: CalendarDays },
 		{ href: "/notifications", label: "通知", icon: Bell, count: unread },
 	];
 	const admin: NavItem[] =

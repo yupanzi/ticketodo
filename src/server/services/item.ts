@@ -54,6 +54,7 @@ import {
 	type PriorityFilter,
 	UNTRIAGED,
 } from "~/domain/priority";
+import type { ScheduleScope } from "~/domain/schedule";
 import { findEdge, statusTimestamps } from "~/domain/status";
 import { auditInTx } from "~/server/audit/record";
 import type { Executor, Tx } from "~/server/db";
@@ -409,6 +410,38 @@ export async function boardItems(
 		// 与列表默认排序同一套键：象限内优先级相同，即期望完成近的在前、没设的在后
 		.orderBy(...orderOf(sortKeys(DEFAULT_SORT)))
 		.limit(BOARD_LIMIT);
+	return withTags(ctx.db, rows);
+}
+
+/** 日历、甘特一次最多回多少条：一屏画不下更多，再多就该去列表筛了 */
+const SCHEDULE_LIMIT = 300;
+
+/** 日历与甘特的视角（`ScheduleScope`）；都不看已关闭的，与看板一致 */
+function scheduleScopeWhere(me: string, scope: ScheduleScope): SQL | undefined {
+	const open = not(eq(items.status, "closed"));
+	if (scope === "assigned") return and(open, eq(items.assigneeId, me));
+	if (scope === "reported")
+		return and(open, eq(items.reporterId, me), eq(items.type, "ticket"));
+	return open;
+}
+
+/** 日历：期望完成落在 [from, to] 的单（起止含当天） */
+export async function calendarItems(
+	ctx: ServiceContext,
+	input: { from: string; to: string; scope: ScheduleScope },
+): Promise<ItemView[]> {
+	const rows = await selectItems(ctx.db)
+		.where(
+			and(
+				visibleItemsWhere(ctx.actor),
+				scheduleScopeWhere(ctx.actor.id, input.scope),
+				gte(items.dueDate, input.from),
+				lte(items.dueDate, input.to),
+			),
+		)
+		// 同一天里与列表默认排序一致：待定级与 P0 在前
+		.orderBy(asc(items.dueDate), ...orderOf(sortKeys(DEFAULT_SORT)))
+		.limit(SCHEDULE_LIMIT);
 	return withTags(ctx.db, rows);
 }
 

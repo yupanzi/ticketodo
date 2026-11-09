@@ -618,6 +618,64 @@ describe.skipIf(!hasTestDb)("item API", () => {
 		});
 	});
 
+	describe("日历", () => {
+		it("按期望完成取区间内的；按视角分；已关闭与别人的 todo 不出现", async () => {
+			const me = await actor({ name: "日历" });
+			const today = todayInAppTz();
+			const inRange = await newTicket(reporter, me, {
+				dueDate: addDays(today, 3),
+			});
+			const outOfRange = await newTicket(reporter, me, {
+				dueDate: addDays(today, 40),
+			});
+			const closed = await newTicket(reporter, me, { dueDate: today });
+			await reporter.api.item.transition({ code: closed, to: "closed" });
+			const mine = await newTicket(me, reporter, { dueDate: today });
+			const { code: privateTodo } = await bystander.api.item.create({
+				type: "todo",
+				title: "私事",
+				priority: "P1",
+				dueDate: today,
+			});
+
+			const range = { from: today, to: addDays(today, 30) };
+			const codes = async (
+				scope: "assigned" | "reported" | "all",
+				who: Actor = me,
+			) =>
+				(await who.api.item.calendar({ ...range, scope })).map((i) => i.code);
+			expect(await codes("assigned")).toEqual([inRange]);
+			expect(await codes("reported")).toEqual([mine]);
+			const all = await codes("all");
+			expect(all).toEqual(expect.arrayContaining([inRange, mine]));
+			expect(all).not.toContain(outOfRange);
+			expect(all).not.toContain(closed);
+			expect(all).not.toContain(privateTodo);
+		});
+
+		it("区间倒序或超过上限：BAD_REQUEST", async () => {
+			const today = todayInAppTz();
+			expect(
+				await codeOf(
+					reporter.api.item.calendar({
+						from: today,
+						to: addDays(today, -1),
+						scope: "all",
+					}),
+				),
+			).toBe("BAD_REQUEST");
+			expect(
+				await codeOf(
+					reporter.api.item.calendar({
+						from: today,
+						to: addDays(today, 90),
+						scope: "all",
+					}),
+				),
+			).toBe("BAD_REQUEST");
+		});
+	});
+
 	describe("列表多选筛选", () => {
 		it("标签命中任一；负责人、提单人、类型都能多选", async () => {
 			const me = await actor({ name: "多选" });
