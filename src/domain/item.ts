@@ -31,3 +31,4 @@ export const STATUS_LABEL: Record<ItemStatus, string> = {
 
 export const TITLE_MAX_LENGTH = 200;
 export const DESCRIPTION_MAX_LENGTH = 20_000;
+export const COMMENT_MAX_LENGTH = 10_000;

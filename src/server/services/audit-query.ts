@@ -14,6 +14,8 @@ export interface AuditFilters {
 	status?: AuditStatus;
 	/** 单号，或 targetType:targetId */
 	target?: string;
+	/** 某个 API key 做过的全部操作（key 泄露时查） */
+	apiKeyId?: string;
 	cursor?: number;
 	limit: number;
 }
@@ -34,6 +36,7 @@ export async function queryAudit(
 		conds.push(like(auditLogs.action, `${escaped}%`));
 	}
 	if (f.status) conds.push(eq(auditLogs.status, f.status));
+	if (f.apiKeyId) conds.push(eq(auditLogs.apiKeyId, f.apiKeyId));
 	const target = f.target?.trim();
 	if (target) {
 		if (parseItemCode(target)) {

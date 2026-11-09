@@ -1,8 +1,10 @@
 import { DrizzleQueryError } from "drizzle-orm";
 import pino, { type BaseLogger } from "pino";
 
+import { API_KEY_PREFIX, API_KEY_SECRET_LENGTH } from "~/domain/api-key";
+
 /**
- * 全进程唯一的根 logger。请求里用 tRPC context 的 `log`（`logger.child({ reqId })`，对得上审计的
+ * 全进程唯一的根 logger。请求里用 API context 的 `log`（`logger.child({ reqId })`，对得上审计的
  * `request_id`）。
  *
  * ⚠️ Error 只放 `err` 键：只有它走下面的序列化器，放别的键得到 `{}`。
@@ -112,12 +114,26 @@ function serializeError(err: unknown): unknown {
 	return pino.stdSerializers.err(redactQueryParams(err) as Error);
 }
 
+/**
+ * API key 明文不论混在哪个字段（错误 message、cause、header）都在写出前整行替换掉：`tk_` 前缀就是
+ * 为了让它认得出来。
+ */
+const API_KEY_IN_TEXT = new RegExp(
+	`${API_KEY_PREFIX}[A-Za-z0-9]{${API_KEY_SECRET_LENGTH}}`,
+	"g",
+);
+
+function scrubApiKeys(line: string): string {
+	return line.replace(API_KEY_IN_TEXT, `${API_KEY_PREFIX}[REDACTED]`);
+}
+
 /** 导出给测试：验证的是生产这套序列化 */
 export const LOGGER_OPTIONS = {
 	level: initialLevel(),
 	formatters: { level: (label: string) => ({ level: label }) },
 	timestamp: pino.stdTimeFunctions.isoTime,
 	serializers: { err: serializeError },
+	hooks: { streamWrite: scrubApiKeys },
 } satisfies pino.LoggerOptions;
 
 export const logger = pino(LOGGER_OPTIONS);

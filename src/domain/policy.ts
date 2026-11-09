@@ -1,3 +1,4 @@
+import type { ApiKeyLevel } from "./api-key";
 import type { ItemStatus, ItemType } from "./item";
 import { type ItemRole, nextStatuses } from "./status";
 
@@ -6,9 +7,13 @@ import { type ItemRole, nextStatuses } from "./status";
  * 回 NOT_FOUND（不泄露别人的 todo 存在），看得见但不让做才回 FORBIDDEN。
  */
 
+/** PG 枚举从这里取值：只加不删 */
+export const USER_ROLES = ["member", "admin"] as const;
+export type UserRole = (typeof USER_ROLES)[number];
+
 export interface Actor {
 	id: string;
-	role: "member" | "admin";
+	role: UserRole;
 }
 
 export interface ItemRef {
@@ -16,7 +21,8 @@ export interface ItemRef {
 	status: ItemStatus;
 	reporterId: string;
 	assigneeId: string;
-	deletedAt: Date | null;
+	/** 浏览器拿到的是 ISO 字符串（JSON），服务端是 Date：这里只看有没有 */
+	deletedAt: Date | string | null;
 }
 
 export function isAdmin(actor: Actor): boolean {
@@ -102,7 +108,7 @@ export function canComment(actor: Actor, item: ItemRef): boolean {
 
 export interface CommentRef {
 	authorId: string;
-	deletedAt: Date | null;
+	deletedAt: Date | string | null;
 }
 
 export function canEditComment(actor: Actor, comment: CommentRef): boolean {
@@ -130,3 +136,26 @@ export function itemPermissions(actor: Actor, item: ItemRef) {
 	};
 }
 export type ItemPermissions = ReturnType<typeof itemPermissions>;
+
+// ---------- API key ----------
+
+/** 管理员级只有管理员能签；只读、读写人人可签 */
+export function canIssueApiKey(actor: Actor, level: ApiKeyLevel): boolean {
+	return level !== "admin" || isAdmin(actor);
+}
+
+/** 重新签发只有本人：拿到新密钥的人必须就是会以其身份操作的人 */
+export function canRotateApiKey(
+	actor: Actor,
+	key: { userId: string },
+): boolean {
+	return key.userId === actor.id;
+}
+
+/** 撤销：本人，或管理员（没有「停用用户」，离职、泄露时这是唯一的止损手段） */
+export function canRevokeApiKey(
+	actor: Actor,
+	key: { userId: string },
+): boolean {
+	return key.userId === actor.id || isAdmin(actor);
+}

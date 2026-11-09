@@ -11,8 +11,11 @@ import {
 	canDeleteComment,
 	canEdit,
 	canEditComment,
+	canIssueApiKey,
 	canPlan,
 	canRestore,
+	canRevokeApiKey,
+	canRotateApiKey,
 	canView,
 	type ItemRef,
 } from "./policy";
@@ -223,5 +226,26 @@ describe("评论", () => {
 		expect(canEditComment(admin, c)).toBe(false);
 		expect(canDeleteComment(admin, c)).toBe(true);
 		expect(canDeleteComment(reporter, c)).toBe(false);
+	});
+});
+
+describe("API key", () => {
+	it("管理员级只有管理员能签，只读、读写人人可签", () => {
+		expect(canIssueApiKey(reporter, "read")).toBe(true);
+		expect(canIssueApiKey(reporter, "write")).toBe(true);
+		expect(canIssueApiKey(reporter, "admin")).toBe(false);
+		expect(canIssueApiKey(admin, "admin")).toBe(true);
+	});
+
+	it("重新签发只有本人，管理员也不行", () => {
+		expect(canRotateApiKey(reporter, { userId: "r" })).toBe(true);
+		expect(canRotateApiKey(admin, { userId: "r" })).toBe(false);
+		expect(canRotateApiKey(bystander, { userId: "r" })).toBe(false);
+	});
+
+	it("撤销：本人与管理员", () => {
+		expect(canRevokeApiKey(reporter, { userId: "r" })).toBe(true);
+		expect(canRevokeApiKey(admin, { userId: "r" })).toBe(true);
+		expect(canRevokeApiKey(bystander, { userId: "r" })).toBe(false);
 	});
 });

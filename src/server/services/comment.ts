@@ -14,7 +14,7 @@ import {
 } from "~/domain/policy";
 import { auditInTx } from "~/server/audit/record";
 import type { Tx } from "~/server/db";
-import { comments, items, user } from "~/server/db/schema";
+import { apiKeys, comments, items, user } from "~/server/db/schema";
 import { forbidden, notFound } from "~/server/errors";
 import { AUDIT_ACTIONS } from "~/server/resources";
 
@@ -23,13 +23,13 @@ import type { UserRef } from "./item";
 import { getItem } from "./item";
 import { insertNotifications, viewersAmong } from "./notification";
 
-export const COMMENT_MAX_LENGTH = 10_000;
-
 export interface CommentView {
 	id: number;
 	/** 已删除的评论正文不下发 */
 	body: string | null;
 	author: UserRef;
+	/** 正文最后一次经哪个 API key 写的（名称）；null = 浏览器 */
+	apiKeyName: string | null;
 	createdAt: Date;
 	updatedAt: Date;
 	deletedAt: Date | null;
@@ -56,9 +56,11 @@ export async function listComments(
 			updatedAt: comments.updatedAt,
 			deletedAt: comments.deletedAt,
 			author: { id: user.id, name: user.name, image: user.image },
+			apiKeyName: apiKeys.name,
 		})
 		.from(comments)
 		.innerJoin(user, eq(user.id, comments.authorId))
+		.leftJoin(apiKeys, eq(apiKeys.id, comments.apiKeyId))
 		.where(eq(comments.itemId, item.id))
 		.orderBy(asc(comments.id));
 	return rows.map(({ authorId, ...r }) => ({
@@ -119,7 +121,13 @@ export async function addComment(
 		const mentions = await mentionTargets(tx, row, body);
 		const [created] = await tx
 			.insert(comments)
-			.values({ itemId: row.id, authorId: ctx.actor.id, body, mentions })
+			.values({
+				itemId: row.id,
+				authorId: ctx.actor.id,
+				body,
+				mentions,
+				apiKeyId: ctx.source.apiKeyId ?? null,
+			})
 			.returning({ id: comments.id });
 		if (!created) throw new Error("写入评论失败");
 		await auditInTx(tx, {
@@ -145,7 +153,13 @@ export async function addComment(
 	});
 }
 
-async function lockComment(tx: Tx, ctx: ServiceContext, id: number) {
+/** 评论挂在单号下（`/items/{code}/comments/{id}`）：不属于这张单的与不存在的一样是 NOT_FOUND */
+async function lockComment(
+	tx: Tx,
+	ctx: ServiceContext,
+	code: string,
+	id: number,
+) {
 	const [c] = await tx
 		.select()
 		.from(comments)
@@ -153,28 +167,29 @@ async function lockComment(tx: Tx, ctx: ServiceContext, id: number) {
 		.for("update");
 	if (!c) throw notFound("评论");
 	const item = await lockItemForComment(tx, ctx, c.itemId);
+	if (item.code !== code.toUpperCase()) throw notFound("评论");
 	return { c, item };
 }
 
-/** 回所属单号：router 据此回最新评论列表 */
 export async function editComment(
 	ctx: ServiceContext,
+	code: string,
 	id: number,
 	body: string,
-): Promise<string> {
-	return ctx.db.transaction(async (tx) => {
-		const { c, item } = await lockComment(tx, ctx, id);
+): Promise<void> {
+	await ctx.db.transaction(async (tx) => {
+		const { c, item } = await lockComment(tx, ctx, code, id);
 		if (!canEditComment(ctx.actor, c))
 			throw forbidden("只能改自己的评论", {
 				targetType: "comment",
 				targetId: String(id),
 				targetName: item.code,
 			});
-		if (c.body === body) return item.code;
+		if (c.body === body) return;
 		const mentions = await mentionTargets(tx, item, body);
 		await tx
 			.update(comments)
-			.set({ body, mentions })
+			.set({ body, mentions, apiKeyId: ctx.source.apiKeyId ?? null })
 			.where(eq(comments.id, id));
 		await auditInTx(tx, {
 			action: AUDIT_ACTIONS.commentUpdate,
@@ -195,17 +210,16 @@ export async function editComment(
 			ctx.actor,
 			{ excerpt: excerpt(body) },
 		);
-		return item.code;
 	});
 }
 
-/** 回所属单号，同 `editComment` */
 export async function deleteComment(
 	ctx: ServiceContext,
+	code: string,
 	id: number,
-): Promise<string> {
-	return ctx.db.transaction(async (tx) => {
-		const { c, item } = await lockComment(tx, ctx, id);
+): Promise<void> {
+	await ctx.db.transaction(async (tx) => {
+		const { c, item } = await lockComment(tx, ctx, code, id);
 		if (!canDeleteComment(ctx.actor, c))
 			throw forbidden("只能删自己的评论", {
 				targetType: "comment",
@@ -224,6 +238,5 @@ export async function deleteComment(
 			details: { changes: { body: { from: c.body, to: null } } },
 			...actorAudit(ctx),
 		});
-		return item.code;
 	});
 }

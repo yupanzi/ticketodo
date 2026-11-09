@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 
 import { addDays, todayInAppTz } from "~/domain/due";
 import { items, notifications } from "~/server/db/schema";
+import { actor } from "~/test/api";
 import { hasTestDb, testDb } from "~/test/db";
-import { actor } from "~/test/trpc";
 
 import { runDueRemind } from "./due-remind";
 
@@ -14,7 +14,9 @@ describe.skipIf(!hasTestDb)("到期提醒", () => {
 		const owner = await actor();
 		const today = todayInAppTz();
 		const make = async (dueDate: string, title: string) => {
-			const { code } = await reporter.api.item.create({
+			const {
+				item: { code },
+			} = await reporter.api.item.create({
 				type: "ticket",
 				title,
 				assigneeId: owner.user.id,

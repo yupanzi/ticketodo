@@ -1,5 +1,5 @@
 /**
- * 服务层的业务错误，不依赖 tRPC（cron 也调服务层）。tRPC 中间件把它翻成同名的 TRPCError 码，
+ * 服务层的业务错误，不依赖 oRPC（cron 也调服务层）。API 的拦截器把它翻成同名的 ORPCError 码，
  * FORBIDDEN 的变更顺带写一条 failure 审计（target 取这里带的）。
  */
 

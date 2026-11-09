@@ -23,11 +23,11 @@ import { STATUS_LABEL } from "~/domain/item";
 import { NOTIFICATION_LABEL, type NotificationKind } from "~/domain/notify";
 import { formatDateTime, formatDay, formatRelative } from "~/lib/format";
 import { cn } from "~/lib/utils";
-import { type RouterOutputs, useTRPC } from "~/trpc/react";
+import { type ApiOutputs, orpc } from "~/orpc/client";
 
 import { EmptyState, PageHeader, Panel } from "./layout";
 
-type Notification = RouterOutputs["notification"]["list"]["items"][number];
+type Notification = ApiOutputs["notification"]["list"]["items"][number];
 
 const KIND_STYLE: Record<
 	NotificationKind,
@@ -51,23 +51,27 @@ function detail(n: Notification): string | null {
 }
 
 export function NotificationList() {
-	const trpc = useTRPC();
 	const qc = useQueryClient();
 	const router = useRouter();
 	const [unreadOnly, setUnreadOnly] = useState(false);
 	const list = useInfiniteQuery(
-		trpc.notification.list.infiniteQueryOptions(
-			{ unreadOnly, limit: 30 },
-			{ getNextPageParam: (last) => last.nextCursor ?? undefined },
-		),
+		orpc.notification.list.infiniteOptions({
+			input: (cursor: number | undefined) => ({
+				unreadOnly,
+				limit: 30,
+				cursor,
+			}),
+			initialPageParam: undefined,
+			getNextPageParam: (last) => last.nextCursor ?? undefined,
+		}),
 	);
 	const refresh = () =>
-		qc.invalidateQueries({ queryKey: trpc.notification.pathKey() });
+		qc.invalidateQueries({ queryKey: orpc.notification.key() });
 	const markRead = useMutation(
-		trpc.notification.markRead.mutationOptions({ onSuccess: refresh }),
+		orpc.notification.markRead.mutationOptions({ onSuccess: refresh }),
 	);
 	const markAll = useMutation(
-		trpc.notification.markAllRead.mutationOptions({ onSuccess: refresh }),
+		orpc.notification.markAllRead.mutationOptions({ onSuccess: refresh }),
 	);
 	const rows = list.data?.pages.flatMap((p) => p.items) ?? [];
 
@@ -150,7 +154,7 @@ export function NotificationList() {
 										</span>
 										<time
 											className="shrink-0 text-muted-foreground text-xs"
-											dateTime={n.createdAt.toISOString()}
+											dateTime={n.createdAt}
 											title={formatDateTime(n.createdAt)}
 										>
 											{formatRelative(n.createdAt)}

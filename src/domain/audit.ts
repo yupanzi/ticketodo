@@ -30,6 +30,8 @@ export const MAX_IP_LENGTH = 64;
 
 export const MAX_ACTOR_ID_LENGTH = 255;
 
+export const MAX_API_KEY_ID_LENGTH = 64;
+
 /** 超长截断并留 `…`，看得出被截过 */
 function clamp(v: string, max: number): string {
 	return v.length > max ? `${v.slice(0, max - 1)}…` : v;

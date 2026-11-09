@@ -1,12 +1,8 @@
 import type { Metadata } from "next";
 
 import { ItemsTable } from "~/components/items-table";
-import {
-	listQueryInput,
-	nextListCursor,
-	parseListFilters,
-} from "~/lib/item-filters";
-import { getQueryClient, HydrateClient, trpc } from "~/trpc/server";
+import { listInfiniteOptions, parseListFilters } from "~/lib/item-filters";
+import { getQueryClient, HydrateClient, orpc } from "~/orpc/server";
 
 export const metadata: Metadata = { title: "全部单子" };
 
@@ -16,11 +12,9 @@ export default async function ItemsPage({ searchParams }: PageProps<"/items">) {
 	const qc = getQueryClient();
 	await Promise.all([
 		qc.prefetchInfiniteQuery(
-			trpc.item.list.infiniteQueryOptions(listQueryInput(initial), {
-				getNextPageParam: nextListCursor,
-			}),
+			orpc.item.list.infiniteOptions(listInfiniteOptions(initial)),
 		),
-		qc.prefetchQuery(trpc.tag.list.queryOptions()),
+		qc.prefetchQuery(orpc.tag.list.queryOptions()),
 	]);
 	return (
 		<HydrateClient>

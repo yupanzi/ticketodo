@@ -117,15 +117,15 @@ export async function updateTag(
 	ctx: ServiceContext,
 	id: number,
 	patch: { name?: string; color?: TagColor },
-): Promise<void> {
-	await ctx.db.transaction(async (tx) => {
+): Promise<TagView> {
+	return ctx.db.transaction(async (tx) => {
 		const before = await lockTag(tx, id);
 		const name = patch.name ? normalizeTagNames([patch.name])[0] : undefined;
 		const next = {
 			name: name ?? before.name,
 			color: patch.color ?? before.color,
 		};
-		if (next.name === before.name && next.color === before.color) return;
+		if (next.name === before.name && next.color === before.color) return before;
 		const [clash] = await tx
 			.select({ id: tags.id })
 			.from(tags)
@@ -153,6 +153,7 @@ export async function updateTag(
 			},
 			...actorAudit(ctx),
 		});
+		return { id, ...next };
 	});
 }
 

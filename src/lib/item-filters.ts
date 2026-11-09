@@ -135,6 +135,16 @@ export function listQueryInput(f: ListFilterState) {
 export const nextListCursor = (last: { nextCursor?: number | null }) =>
 	last.nextCursor ?? undefined;
 
+/** 无限列表的 options（不含 queryFn）：服务端预取与 ItemsTable 共用，infinite key 才对得上 */
+export function listInfiniteOptions(f: ListFilterState) {
+	const input = listQueryInput(f);
+	return {
+		input: (cursor: number | undefined) => ({ ...input, cursor }),
+		initialPageParam: undefined as number | undefined,
+		getNextPageParam: nextListCursor,
+	};
+}
+
 /** 别处跳到列表（如首页概览卡片）：只写想改的项，其余用默认 */
 export function listHref(patch: Partial<ListFilterState>): string {
 	return `/items${toSearch({ ...DEFAULT_FILTERS, ...patch })}`;

@@ -15,19 +15,18 @@ import {
 	TableRow,
 } from "~/components/ui/table";
 import { formatDateTime } from "~/lib/format";
-import { useTRPC } from "~/trpc/react";
+import { orpc } from "~/orpc/client";
 
 import { TodoBadge } from "./badges";
 import { EmptyState, PageHeader, Panel } from "./layout";
 import { UserChip } from "./user-avatar";
 
 export function AdminTrash() {
-	const trpc = useTRPC();
 	const qc = useQueryClient();
-	const { data = [], isLoading } = useQuery(trpc.item.trash.queryOptions());
+	const { data = [], isLoading } = useQuery(orpc.item.trash.queryOptions());
 	const restore = useMutation(
-		trpc.item.restore.mutationOptions({
-			onSuccess: () => qc.invalidateQueries({ queryKey: trpc.item.pathKey() }),
+		orpc.item.restore.mutationOptions({
+			onSuccess: () => qc.invalidateQueries({ queryKey: orpc.item.key() }),
 			onError: (err) => toast.error(err.message),
 		}),
 	);

@@ -40,7 +40,7 @@ import {
 } from "~/domain/priority";
 import { listHref } from "~/lib/item-filters";
 import { cn } from "~/lib/utils";
-import { type RouterOutputs, useTRPC } from "~/trpc/react";
+import { type ApiOutputs, orpc } from "~/orpc/client";
 
 import {
 	DueBadge,
@@ -55,7 +55,7 @@ import { type Me, useMe } from "./me-context";
 import { UserAvatar } from "./user-avatar";
 import { ScopeTabs } from "./view-toolbar";
 
-type BoardItem = RouterOutputs["item"]["board"][number];
+type BoardItem = ApiOutputs["view"]["board"][number];
 const SCOPES: { value: BoardScope; label: string }[] = [
 	{ value: "mine", label: "需要我处理" },
 	{ value: "reported", label: "我提的" },
@@ -117,9 +117,8 @@ function StatCard({
 }
 
 function Summary() {
-	const trpc = useTRPC();
 	const me = useMe();
-	const { data } = useQuery(trpc.item.summary.queryOptions());
+	const { data } = useQuery(orpc.view.summary.queryOptions());
 	return (
 		<div className="mb-6 grid grid-cols-2 gap-4 xl:grid-cols-4">
 			<StatCard
@@ -357,16 +356,17 @@ const ANNOUNCEMENTS: Announcements = {
 };
 
 export function QuadrantBoard() {
-	const trpc = useTRPC();
 	const qc = useQueryClient();
 	const cache = useItemCache();
 	const [scope, setScope] = useState(DEFAULT_BOARD_SCOPE);
-	const boardKey = trpc.item.board.queryKey({ scope });
-	const { data, isLoading } = useQuery(trpc.item.board.queryOptions({ scope }));
+	const boardKey = orpc.view.board.queryKey({ input: { scope } });
+	const { data, isLoading } = useQuery(
+		orpc.view.board.queryOptions({ input: { scope } }),
+	);
 	const today = todayInAppTz();
 
 	const move = useMutation(
-		trpc.item.update.mutationOptions({
+		orpc.item.update.mutationOptions({
 			// 乐观更新：先挪过去，失败再挪回来
 			onMutate: async ({ code, priority }) => {
 				await qc.cancelQueries({ queryKey: boardKey });
@@ -383,7 +383,7 @@ export function QuadrantBoard() {
 			onError: (err, _vars, context) => {
 				qc.setQueryData(boardKey, context?.prev);
 				toast.error(err.message);
-				void qc.invalidateQueries({ queryKey: trpc.item.board.pathKey() });
+				void qc.invalidateQueries({ queryKey: orpc.view.board.key() });
 			},
 		}),
 	);

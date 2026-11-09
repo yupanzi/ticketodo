@@ -23,19 +23,22 @@ import {
 } from "~/components/ui/table";
 import type { DayRange } from "~/domain/due";
 import { formatDateTime } from "~/lib/format";
-import { useTRPC } from "~/trpc/react";
+import { orpc } from "~/orpc/client";
 
+import { ApiBadge } from "./badges";
+import { Chip } from "./chip";
 import { DateRangePicker } from "./date-picker";
 import { PageHeader, Panel } from "./layout";
 
 /** 起止日期按北京时间的整天算 */
-function dayBound(day: string | undefined, end: boolean): Date | undefined {
+function dayBound(day: string | undefined, end: boolean): string | undefined {
 	if (!day) return undefined;
-	return new Date(`${day}T${end ? "23:59:59.999" : "00:00:00"}+08:00`);
+	return `${day}T${end ? "23:59:59.999" : "00:00:00"}+08:00`;
 }
 
-export function AdminAudit() {
-	const trpc = useTRPC();
+/** `apiKeyId` 从「密钥管理」点进来：只看这个 key 做过的事（key 泄露时查） */
+export function AdminAudit({ apiKeyId }: { apiKeyId?: string }) {
+	const [keyFilter, setKeyFilter] = useState(apiKeyId);
 	const [action, setAction] = useState("");
 	const [target, setTarget] = useState("");
 	const [status, setStatus] = useState<"any" | "success" | "failure">("any");
@@ -45,17 +48,20 @@ export function AdminAudit() {
 	const [open, setOpen] = useState<number | null>(null);
 
 	const list = useInfiniteQuery(
-		trpc.admin.audit.infiniteQueryOptions(
-			{
+		orpc.admin.auditLogs.infiniteOptions({
+			input: (cursor: number | undefined) => ({
 				action: deferredAction.trim() || undefined,
 				target: deferredTarget.trim() || undefined,
 				status: status === "any" ? undefined : status,
 				from: dayBound(range.from, false),
 				to: dayBound(range.to, true),
+				apiKeyId: keyFilter,
+				cursor,
 				limit: 50,
-			},
-			{ getNextPageParam: (last) => last.nextCursor ?? undefined },
-		),
+			}),
+			initialPageParam: undefined,
+			getNextPageParam: (last) => last.nextCursor ?? undefined,
+		}),
 	);
 	const rows = list.data?.pages.flatMap((p) => p.rows) ?? [];
 
@@ -104,6 +110,19 @@ export function AdminAudit() {
 						onChange={setRange}
 						value={range}
 					/>
+					{keyFilter && (
+						<Chip tone="ink">
+							只看一个 API key
+							<button
+								aria-label="不再只看这个 key"
+								className="-mr-1 rounded-full px-1 hover:opacity-70"
+								onClick={() => setKeyFilter(undefined)}
+								type="button"
+							>
+								×
+							</button>
+						</Chip>
+					)}
 				</div>
 				<div>
 					<Table>
@@ -128,7 +147,11 @@ export function AdminAudit() {
 											{formatDateTime(r.at)}
 										</TableCell>
 										<TableCell className="text-sm">
-											{r.actorName ?? (r.actorType === "system" ? "系统" : "—")}
+											<span className="flex items-center gap-1.5">
+												{r.actorName ??
+													(r.actorType === "system" ? "系统" : "—")}
+												{r.apiKeyName && <ApiBadge keyName={r.apiKeyName} />}
+											</span>
 										</TableCell>
 										<TableCell className="font-mono text-xs">
 											{r.action}
@@ -169,6 +192,8 @@ export function AdminAudit() {
 															path: r.path,
 															userAgent: r.userAgent,
 															actorId: r.actorId,
+															apiKeyId: r.apiKeyId,
+															apiKeyName: r.apiKeyName,
 															targetId: r.targetId,
 															details: r.details,
 														},

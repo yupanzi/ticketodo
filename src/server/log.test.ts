@@ -28,6 +28,21 @@ function queryError() {
 }
 
 describe("根 logger 的输出", () => {
+	it("API key 明文不论在哪个字段都被替换", () => {
+		const key = `tk_${"A1b2".repeat(10)}xyz`;
+		const { line } = capture((log) =>
+			log.error(
+				{
+					err: new Error(`bad ${key}`),
+					headers: { authorization: `Bearer ${key}` },
+				},
+				`saw ${key}`,
+			),
+		);
+		expect(line).not.toContain(key);
+		expect(line).toContain("tk_[REDACTED]");
+	});
+
 	it("级别是字符串、时间是 ISO", () => {
 		const { obj } = capture((log) => log.info("hi"));
 		expect(obj.level).toBe("info");

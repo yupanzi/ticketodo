@@ -6,7 +6,7 @@ import { useId, useState } from "react";
 
 import { Input } from "~/components/ui/input";
 import { normalizeTagNames, TAG_NAME_MAX_LENGTH } from "~/domain/tag";
-import { useTRPC } from "~/trpc/react";
+import { orpc } from "~/orpc/client";
 
 import { Chip } from "./chip";
 
@@ -20,8 +20,7 @@ export function TagInput({
 	onChange: (tags: string[]) => void;
 	id?: string;
 }) {
-	const trpc = useTRPC();
-	const { data: all = [] } = useQuery(trpc.tag.list.queryOptions());
+	const { data: all = [] } = useQuery(orpc.tag.list.queryOptions());
 	const [draft, setDraft] = useState("");
 	const listId = useId();
 

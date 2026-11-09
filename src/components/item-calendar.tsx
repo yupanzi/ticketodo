@@ -16,13 +16,13 @@ import { listHref } from "~/lib/item-filters";
 import { calendarQueryInput, calendarSearch } from "~/lib/schedule-params";
 import { useReplaceSearch } from "~/lib/use-replace-search";
 import { cn } from "~/lib/utils";
-import { type RouterOutputs, useTRPC } from "~/trpc/react";
+import { type ApiOutputs, orpc } from "~/orpc/client";
 
 import { priorityAccentOf } from "./badges";
 import { EmptyState, PageHeader, Panel } from "./layout";
 import { PagerBar, SCHEDULE_SCOPE_OPTIONS, ScopeTabs } from "./view-toolbar";
 
-type CalendarItem = RouterOutputs["item"]["calendar"][number];
+type CalendarItem = ApiOutputs["view"]["calendar"][number];
 
 const WEEKDAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 /** 一格最多列几条，多了给「+N」去列表看那一天 */
@@ -55,7 +55,6 @@ export function ItemCalendar({
 	initialMonth: string;
 	initialScope: ScheduleScope;
 }) {
-	const trpc = useTRPC();
 	const qc = useQueryClient();
 	const today = todayInAppTz();
 	const thisMonth = today.slice(0, 7);
@@ -64,7 +63,9 @@ export function ItemCalendar({
 
 	// 翻月时先留着上个月的格子，不闪骨架
 	const { data = [] } = useQuery({
-		...trpc.item.calendar.queryOptions(calendarQueryInput(month, scope)),
+		...orpc.view.calendar.queryOptions({
+			input: calendarQueryInput(month, scope),
+		}),
 		placeholderData: keepPreviousData,
 	});
 	useReplaceSearch(calendarSearch(month, scope, today));
@@ -72,9 +73,11 @@ export function ItemCalendar({
 	useEffect(() => {
 		for (const m of [shiftMonth(month, -1), shiftMonth(month, 1)])
 			void qc.prefetchQuery(
-				trpc.item.calendar.queryOptions(calendarQueryInput(m, scope)),
+				orpc.view.calendar.queryOptions({
+					input: calendarQueryInput(m, scope),
+				}),
 			);
-	}, [month, scope, qc, trpc]);
+	}, [month, scope, qc]);
 
 	const byDay = new Map<string, CalendarItem[]>();
 	for (const i of data) {

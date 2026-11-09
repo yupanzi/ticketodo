@@ -13,21 +13,20 @@ import {
 	TableRow,
 } from "~/components/ui/table";
 import { formatDateTime } from "~/lib/format";
-import { useTRPC } from "~/trpc/react";
+import { orpc } from "~/orpc/client";
 import { Chip } from "./chip";
 import { PageHeader, Panel } from "./layout";
 import { useMe } from "./me-context";
 import { UserChip } from "./user-avatar";
 
 export function AdminUsers() {
-	const trpc = useTRPC();
 	const qc = useQueryClient();
 	const me = useMe();
-	const { data = [] } = useQuery(trpc.admin.users.queryOptions());
+	const { data = [] } = useQuery(orpc.admin.users.queryOptions());
 	const setRole = useMutation(
-		trpc.admin.setRole.mutationOptions({
+		orpc.admin.setRole.mutationOptions({
 			onSuccess: () =>
-				qc.invalidateQueries({ queryKey: trpc.admin.users.queryKey() }),
+				qc.invalidateQueries({ queryKey: orpc.admin.users.queryKey() }),
 			onError: (err) => toast.error(err.message),
 		}),
 	);
@@ -74,7 +73,7 @@ export function AdminUsers() {
 												role === "admin" ? "设为管理员" : "撤销管理员";
 											const self = u.id === me.id ? "（你自己）" : "";
 											if (confirm(`${verb}：${u.name}${self}？`))
-												setRole.mutate({ userId: u.id, role });
+												setRole.mutate({ id: u.id, role });
 										}}
 										size="sm"
 										variant="outline"

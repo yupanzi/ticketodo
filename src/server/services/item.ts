@@ -505,12 +505,15 @@ export interface TimelineEvent {
 	at: Date;
 	action: string;
 	actorName: string | null;
+	/** 经 API key 的操作（名称）；null = 浏览器 */
+	apiKeyName: string | null;
 	summary: string | null;
 	changes: AuditChanges | null;
 }
 
 /**
- * 时间线 = 该条目的成功审计。⚠️ 只选白名单列：ip、user_agent、request_id 只给管理员在审计页看。
+ * 时间线 = 该条目的成功审计。⚠️ 只选白名单列：ip、user_agent、request_id、api_key_id 只给管理员在
+ * 审计页看（key 名称给大家看：同事要分得清哪些是 AI 代做的）。
  * 评论的审计不进来（评论本身就在流里，改过 / 删了的正文不能借审计漏给旁人）。
  * todo 转 ticket 之前的记录那时是私人的，非管理员看不到。
  */
@@ -529,6 +532,7 @@ export async function timeline(
 			at: auditLogs.at,
 			action: auditLogs.action,
 			actorName: auditLogs.actorName,
+			apiKeyName: auditLogs.apiKeyName,
 			details: auditLogs.details,
 		})
 		.from(auditLogs)

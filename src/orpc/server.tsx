@@ -1,12 +1,12 @@
 import "server-only";
 
+import { createTanstackQueryUtils } from "@orpc/tanstack-query";
 import { dehydrate, HydrationBoundary } from "@tanstack/react-query";
-import { createTRPCOptionsProxy } from "@trpc/tanstack-react-query";
 import { headers } from "next/headers";
 import { cache } from "react";
 
 import { contextFromHeaders } from "~/server/api/context";
-import { appRouter } from "~/server/api/root";
+import { createApiClient } from "~/server/api/router";
 
 import { makeQueryClient } from "./query-client";
 
@@ -18,11 +18,11 @@ const rscContext = cache(async () =>
 	contextFromHeaders(await headers(), { method: "GET", path: "/rsc" }),
 );
 
-export const trpc = createTRPCOptionsProxy({
-	ctx: rscContext,
-	router: appRouter,
-	queryClient: getQueryClient,
-});
+/**
+ * RSC 预取：进程内直接调 router（不绕 HTTP），key 与浏览器的 `~/orpc/client` 一致。client 是模块级的，
+ * context 每次调用现取（`rscContext` 让同一次渲染共用本次请求的会话）。
+ */
+export const orpc = createTanstackQueryUtils(createApiClient(rscContext));
 
 export function HydrateClient({ children }: { children: React.ReactNode }) {
 	return (

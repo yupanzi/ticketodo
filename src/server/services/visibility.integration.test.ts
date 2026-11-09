@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 
 import { type Actor, canView } from "~/domain/policy";
 import { items } from "~/server/db/schema";
+import { actor } from "~/test/api";
 import { hasTestDb, testDb } from "~/test/db";
-import { actor } from "~/test/trpc";
 
 import { visibleItemsWhere } from "./visibility";
 
@@ -22,18 +22,18 @@ describe.skipIf(!hasTestDb)("visibleItemsWhere 与 canView 一致", () => {
 					title: "t",
 					assigneeId: other.user.id,
 				})
-			).code,
+			).item.code,
 			(
 				await owner.api.item.create({
 					type: "todo",
 					title: "d",
 					priority: "P1",
 				})
-			).code,
+			).item.code,
 		];
 		const deleted = (
 			await owner.api.item.create({ type: "todo", title: "x", priority: "P3" })
-		).code;
+		).item.code;
 		await owner.api.item.delete({ code: deleted });
 		codes.push(deleted);
 

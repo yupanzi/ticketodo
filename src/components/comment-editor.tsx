@@ -7,7 +7,7 @@ import { Button } from "~/components/ui/button";
 import { Textarea } from "~/components/ui/textarea";
 import { formatMention } from "~/domain/mention";
 import { cn } from "~/lib/utils";
-import { useTRPC } from "~/trpc/react";
+import { orpc } from "~/orpc/client";
 
 import { UserChip } from "./user-avatar";
 
@@ -28,17 +28,16 @@ export function CommentEditor({
 	onSubmit: (body: string) => Promise<unknown> | undefined;
 	onCancel?: () => void;
 }) {
-	const trpc = useTRPC();
 	const ref = useRef<HTMLTextAreaElement>(null);
 	const [body, setBody] = useState(initial);
 	const [query, setQuery] = useState<string | null>(null);
 	const [active, setActive] = useState(0);
 	const deferred = useDeferredValue(query ?? "");
 	const { data: users = [] } = useQuery(
-		trpc.user.search.queryOptions(
-			{ q: deferred, limit: 8 },
-			{ enabled: query !== null },
-		),
+		orpc.user.list.queryOptions({
+			input: { q: deferred, limit: 8 },
+			enabled: query !== null,
+		}),
 	);
 	const open = query !== null && users.length > 0;
 

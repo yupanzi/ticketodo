@@ -1,26 +1,11 @@
-import { z } from "zod";
-import { daysBetween } from "~/domain/due";
-import {
-	DESCRIPTION_MAX_LENGTH,
-	ITEM_STATUSES,
-	ITEM_TYPES,
-	TITLE_MAX_LENGTH,
-} from "~/domain/item";
-import {
-	BOARD_SCOPES,
-	DUE_PRESETS,
-	ITEM_SORTS,
-	SORT_DIRS,
-} from "~/domain/item-list";
-import { PRIORITIES, PRIORITY_FILTERS } from "~/domain/priority";
-import { SCHEDULE_MAX_DAYS, SCHEDULE_SCOPES } from "~/domain/schedule";
-import { TAG_NAME_MAX_LENGTH } from "~/domain/tag";
-import {
-	adminProcedure,
-	createTRPCRouter,
-	protectedProcedure,
-} from "~/server/api/trpc";
 import { AUDIT_ACTIONS } from "~/server/resources";
+import {
+	addComment,
+	deleteComment,
+	editComment,
+	listComments,
+} from "~/server/services/comment";
+import type { ServiceContext } from "~/server/services/context";
 import {
 	assignItem,
 	boardItems,
@@ -39,182 +24,150 @@ import {
 	updateItem,
 } from "~/server/services/item";
 
-const code = z.string().trim().min(1).max(32);
-const userId = z.string().min(1).max(64);
-const title = z.string().trim().min(1, "标题不能为空").max(TITLE_MAX_LENGTH);
-const description = z.string().max(DESCRIPTION_MAX_LENGTH);
-/** `YYYY-MM-DD` 或 null（不设） */
-const nullableDay = z.iso.date().nullable();
-const tagNames = z.array(z.string().max(TAG_NAME_MAX_LENGTH)).max(10);
-
-/** 日历、甘特的区间：起止含当天，最多 `SCHEDULE_MAX_DAYS` 天（一屏画不下更多） */
-const scheduleRange = z
-	.object({
-		from: z.iso.date(),
-		to: z.iso.date(),
-		scope: z.enum(SCHEDULE_SCOPES),
-	})
-	.refine((r) => {
-		const n = daysBetween(r.from, r.to);
-		return n >= 0 && n < SCHEDULE_MAX_DAYS;
-	}, `起止要有序，最多 ${SCHEDULE_MAX_DAYS} 天`);
+import { guard, os } from "../orpc";
 
 /**
- * 改单的 mutation 都回最新详情（与 byCode 同形）：客户端拿它当场更新详情页，不用改完再查一趟。
- * 服务端多一次查库是毫秒级，省下的是一个网络往返。
+ * 改单的接口都回最新详情（与 GET /items/{code} 同形）：浏览器拿它当场更新页面，AI 拿它确认结果，
+ * 都不用改完再查一趟。服务端多一次查库是毫秒级，省下的是一个网络往返。
  */
-const detailAfter = async (
-	svc: Parameters<typeof getItem>[0],
+async function detailAfter(
+	svc: ServiceContext,
 	code: string,
 	write: Promise<unknown>,
-) => {
+) {
 	await write;
 	return getItem(svc, code);
-};
+}
 
-const createFields = {
-	title,
-	description: description.default(""),
-	dueDate: nullableDay.default(null),
-	tags: tagNames.default([]),
-};
+export const itemRouter = {
+	list: os.item.list
+		.use(guard())
+		.handler(({ context, input }) => listItems(context.svc, input)),
 
-export const itemRouter = createTRPCRouter({
-	create: protectedProcedure
-		.meta({ audit: AUDIT_ACTIONS.itemCreate })
-		.input(
-			z.discriminatedUnion("type", [
-				// ticket 必须指定负责人：不存在未指派的单。不收优先级：建单是待定级，由负责人定
-				z.object({
-					type: z.literal("ticket"),
-					assigneeId: userId,
-					...createFields,
-				}),
-				z.object({
-					type: z.literal("todo"),
-					priority: z.enum(PRIORITIES),
-					startDate: nullableDay.default(null),
-					...createFields,
-				}),
-			]),
-		)
-		// 只回单号：前端接着跳详情页，那边服务端渲染时自己取（不用 detailAfter）
-		.mutation(({ ctx, input }) => createItem(ctx.svc, input)),
+	create: os.item.create
+		.use(guard({ audit: AUDIT_ACTIONS.itemCreate }))
+		.handler(async ({ context, input }) => {
+			const { code } = await createItem(context.svc, input);
+			return getItem(context.svc, code);
+		}),
 
-	byCode: protectedProcedure
-		.input(z.object({ code }))
-		.query(({ ctx, input }) => getItem(ctx.svc, input.code)),
+	get: os.item.get
+		.use(guard())
+		.handler(({ context, input }) => getItem(context.svc, input.code)),
 
-	list: protectedProcedure
-		.input(
-			z.object({
-				types: z.array(z.enum(ITEM_TYPES)).optional(),
-				statuses: z.array(z.enum(ITEM_STATUSES)).optional(),
-				priorities: z.array(z.enum(PRIORITY_FILTERS)).optional(),
-				assigneeIds: z.array(userId).max(50).optional(),
-				reporterIds: z.array(userId).max(50).optional(),
-				tagIds: z.array(z.number().int().positive()).max(50).optional(),
-				due: z
-					.union([
-						z.enum(DUE_PRESETS),
-						z
-							.object({
-								from: z.iso.date().optional(),
-								to: z.iso.date().optional(),
-							})
-							.refine((r) => r.from || r.to, "起止日期至少给一个"),
-					])
-					.optional(),
-				q: z.string().max(100).optional(),
-				sort: z
-					.object({ by: z.enum(ITEM_SORTS), dir: z.enum(SORT_DIRS) })
-					.optional(),
-				cursor: z.number().int().positive().optional(),
-				limit: z.number().int().min(1).max(100).default(50),
-			}),
-		)
-		.query(({ ctx, input }) => listItems(ctx.svc, input)),
-
-	summary: protectedProcedure.query(({ ctx }) => mySummary(ctx.svc)),
-
-	board: protectedProcedure
-		.input(z.object({ scope: z.enum(BOARD_SCOPES) }))
-		.query(({ ctx, input }) => boardItems(ctx.svc, input.scope)),
-
-	calendar: protectedProcedure
-		.input(scheduleRange)
-		.query(({ ctx, input }) => calendarItems(ctx.svc, input)),
-
-	gantt: protectedProcedure
-		.input(scheduleRange)
-		.query(({ ctx, input }) => ganttItems(ctx.svc, input)),
-
-	timeline: protectedProcedure
-		.input(z.object({ code }))
-		.query(({ ctx, input }) => timeline(ctx.svc, input.code)),
-
-	update: protectedProcedure
-		.meta({ audit: AUDIT_ACTIONS.itemUpdate })
-		.input(
-			z.object({
+	update: os.item.update
+		.use(guard({ audit: AUDIT_ACTIONS.itemUpdate }))
+		.handler(({ context, input: { code, expectedUpdatedAt, ...patch } }) =>
+			detailAfter(
+				context.svc,
 				code,
-				expectedUpdatedAt: z.date().optional(),
-				title: title.optional(),
-				description: description.optional(),
-				priority: z.enum(PRIORITIES).optional(),
-				dueDate: nullableDay.optional(),
-				startDate: nullableDay.optional(),
-				tags: tagNames.optional(),
-			}),
-		)
-		.mutation(({ ctx, input: { code, ...patch } }) =>
-			detailAfter(ctx.svc, code, updateItem(ctx.svc, code, patch)),
-		),
-
-	transition: protectedProcedure
-		.meta({ audit: AUDIT_ACTIONS.itemStatus })
-		.input(z.object({ code, to: z.enum(ITEM_STATUSES) }))
-		.mutation(({ ctx, input }) =>
-			detailAfter(
-				ctx.svc,
-				input.code,
-				transitionItem(ctx.svc, input.code, input.to),
+				updateItem(context.svc, code, {
+					...patch,
+					expectedUpdatedAt: expectedUpdatedAt
+						? new Date(expectedUpdatedAt)
+						: undefined,
+				}),
 			),
 		),
 
-	assign: protectedProcedure
-		.meta({ audit: AUDIT_ACTIONS.itemAssign })
-		.input(z.object({ code, assigneeId: userId }))
-		.mutation(({ ctx, input }) =>
+	delete: os.item.delete
+		.use(guard({ audit: AUDIT_ACTIONS.itemDelete }))
+		.handler(async ({ context, input }) => {
+			await deleteItem(context.svc, input.code);
+			return { code: input.code.toUpperCase() };
+		}),
+
+	transition: os.item.transition
+		.use(guard({ audit: AUDIT_ACTIONS.itemStatus }))
+		.handler(({ context, input }) =>
 			detailAfter(
-				ctx.svc,
+				context.svc,
 				input.code,
-				assignItem(ctx.svc, input.code, input.assigneeId),
+				transitionItem(context.svc, input.code, input.to),
 			),
 		),
 
-	convert: protectedProcedure
-		.meta({ audit: AUDIT_ACTIONS.itemConvert })
-		.input(z.object({ code, assigneeId: userId }))
-		.mutation(({ ctx, input }) =>
+	assign: os.item.assign
+		.use(guard({ audit: AUDIT_ACTIONS.itemAssign }))
+		.handler(({ context, input }) =>
 			detailAfter(
-				ctx.svc,
+				context.svc,
 				input.code,
-				convertItem(ctx.svc, input.code, input.assigneeId),
+				assignItem(context.svc, input.code, input.assigneeId),
 			),
 		),
 
-	delete: protectedProcedure
-		.meta({ audit: AUDIT_ACTIONS.itemDelete })
-		.input(z.object({ code }))
-		.mutation(({ ctx, input }) => deleteItem(ctx.svc, input.code)),
-
-	restore: adminProcedure
-		.meta({ audit: AUDIT_ACTIONS.itemRestore })
-		.input(z.object({ code }))
-		.mutation(({ ctx, input }) =>
-			detailAfter(ctx.svc, input.code, restoreItem(ctx.svc, input.code)),
+	convert: os.item.convert
+		.use(guard({ audit: AUDIT_ACTIONS.itemConvert }))
+		.handler(({ context, input }) =>
+			detailAfter(
+				context.svc,
+				input.code,
+				convertItem(context.svc, input.code, input.assigneeId),
+			),
 		),
 
-	trash: adminProcedure.query(({ ctx }) => trashItems(ctx.svc)),
-});
+	restore: os.item.restore
+		.use(guard({ audit: AUDIT_ACTIONS.itemRestore, admin: true }))
+		.handler(({ context, input }) =>
+			detailAfter(
+				context.svc,
+				input.code,
+				restoreItem(context.svc, input.code),
+			),
+		),
+
+	timeline: os.item.timeline
+		.use(guard())
+		.handler(({ context, input }) => timeline(context.svc, input.code)),
+
+	trash: os.item.trash
+		.use(guard({ admin: true }))
+		.handler(({ context }) => trashItems(context.svc)),
+};
+
+/** 评论的变更都回这张单的最新评论列表，理由同 `detailAfter` */
+export const commentRouter = {
+	list: os.comment.list
+		.use(guard())
+		.handler(({ context, input }) => listComments(context.svc, input.code)),
+
+	create: os.comment.create
+		.use(guard({ audit: AUDIT_ACTIONS.commentCreate }))
+		.handler(async ({ context, input }) => {
+			await addComment(context.svc, input.code, input.body);
+			return listComments(context.svc, input.code);
+		}),
+
+	update: os.comment.update
+		.use(guard({ audit: AUDIT_ACTIONS.commentUpdate }))
+		.handler(async ({ context, input }) => {
+			await editComment(context.svc, input.code, input.id, input.body);
+			return listComments(context.svc, input.code);
+		}),
+
+	delete: os.comment.delete
+		.use(guard({ audit: AUDIT_ACTIONS.commentDelete }))
+		.handler(async ({ context, input }) => {
+			await deleteComment(context.svc, input.code, input.id);
+			return listComments(context.svc, input.code);
+		}),
+};
+
+export const viewRouter = {
+	summary: os.view.summary
+		.use(guard())
+		.handler(({ context }) => mySummary(context.svc)),
+
+	board: os.view.board
+		.use(guard())
+		.handler(({ context, input }) => boardItems(context.svc, input.scope)),
+
+	calendar: os.view.calendar
+		.use(guard())
+		.handler(({ context, input }) => calendarItems(context.svc, input)),
+
+	gantt: os.view.gantt
+		.use(guard())
+		.handler(({ context, input }) => ganttItems(context.svc, input)),
+};

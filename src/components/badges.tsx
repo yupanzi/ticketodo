@@ -1,4 +1,4 @@
-import { CalendarClock, CircleDashed } from "lucide-react";
+import { Bot, CalendarClock, CircleDashed } from "lucide-react";
 
 import { dueLabel, dueState } from "~/domain/due";
 import { type ItemStatus, STATUS_LABEL } from "~/domain/item";
@@ -152,6 +152,19 @@ export function TagBadge({ name, color }: { name: string; color: TagColor }) {
 	return (
 		<Chip className={cn("rounded-md", TAG_TONE[color])} tone={null}>
 			# {name}
+		</Chip>
+	);
+}
+
+/**
+ * 经 API key 做的（多半是 AI 代做的）：时间线、评论、审计旁标出来，悬停看是哪个 key。
+ * 不加颜色：它不是告警，只是来源。
+ */
+export function ApiBadge({ keyName }: { keyName: string }) {
+	return (
+		<Chip title={`经 API key「${keyName}」`} tone="outline">
+			<Bot />
+			API
 		</Chip>
 	);
 }

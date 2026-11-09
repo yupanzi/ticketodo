@@ -48,13 +48,12 @@ import {
 	DEFAULT_FILTERS,
 	hasActiveFilters,
 	type ListFilterState,
-	listQueryInput,
-	nextListCursor,
+	listInfiniteOptions,
 	toSearch,
 } from "~/lib/item-filters";
 import { useReplaceSearch } from "~/lib/use-replace-search";
 import { cn } from "~/lib/utils";
-import { useTRPC } from "~/trpc/react";
+import { orpc } from "~/orpc/client";
 
 import {
 	DueBadge,
@@ -148,13 +147,12 @@ function SortHead({
 }
 
 export function ItemsTable({ initial }: { initial: ListFilterState }) {
-	const trpc = useTRPC();
 	const me = useMe();
 	const [f, setF] = useState(initial);
 	const set = <K extends keyof ListFilterState>(k: K, v: ListFilterState[K]) =>
 		setF((prev) => ({ ...prev, [k]: v }));
 	const deferredQ = useDeferredValue(f.q);
-	const { data: tags = [] } = useQuery(trpc.tag.list.queryOptions());
+	const { data: tags = [] } = useQuery(orpc.tag.list.queryOptions());
 
 	useReplaceSearch(toSearch({ ...f, q: deferredQ }));
 
@@ -174,12 +172,7 @@ export function ItemsTable({ initial }: { initial: ListFilterState }) {
 	const setMine = (m: Mine) => setF((prev) => ({ ...prev, ...peopleOf(m) }));
 
 	const list = useInfiniteQuery(
-		trpc.item.list.infiniteQueryOptions(
-			listQueryInput({ ...f, q: deferredQ }),
-			{
-				getNextPageParam: nextListCursor,
-			},
-		),
+		orpc.item.list.infiniteOptions(listInfiniteOptions({ ...f, q: deferredQ })),
 	);
 	const rows = list.data?.pages.flatMap((p) => p.items) ?? [];
 	const today = todayInAppTz();

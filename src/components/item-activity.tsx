@@ -18,15 +18,21 @@ import { Skeleton } from "~/components/ui/skeleton";
 import type { AuditChanges } from "~/domain/audit";
 import { type ItemStatus, STATUS_LABEL } from "~/domain/item";
 import { UNTRIAGED_META } from "~/domain/priority";
-import { formatDateTime, formatDay, formatRelative } from "~/lib/format";
-import { type RouterOutputs, useTRPC } from "~/trpc/react";
+import {
+	formatDateTime,
+	formatDay,
+	formatRelative,
+	type Timestamp,
+} from "~/lib/format";
+import { type ApiOutputs, orpc } from "~/orpc/client";
 
+import { ApiBadge } from "./badges";
 import { CommentEditor } from "./comment-editor";
 import { Markdown } from "./markdown";
 import { UserAvatar } from "./user-avatar";
 
-type Event = RouterOutputs["item"]["timeline"][number];
-type Comment = RouterOutputs["comment"]["list"][number];
+type Event = ApiOutputs["item"]["timeline"][number];
+type Comment = ApiOutputs["comment"]["list"][number];
 
 const FIELD_LABEL: Record<string, string> = {
 	title: "标题",
@@ -122,11 +128,11 @@ const EVENT_ICON: Record<
 	"item.restore": RotateCcw,
 };
 
-function Time({ at }: { at: Date }) {
+function Time({ at }: { at: Timestamp }) {
 	return (
 		<time
 			className="shrink-0 text-muted-foreground text-xs"
-			dateTime={at.toISOString()}
+			dateTime={new Date(at).toISOString()}
 			title={formatDateTime(at)}
 		>
 			{formatRelative(at)}
@@ -145,6 +151,11 @@ function EventRow({ e }: { e: Event }) {
 				<span className="font-medium text-foreground">
 					{e.actorName ?? "系统"}
 				</span>{" "}
+				{e.apiKeyName && (
+					<>
+						<ApiBadge keyName={e.apiKeyName} />{" "}
+					</>
+				)}
 				{describe(e)}
 			</p>
 			<Time at={e.at} />
@@ -153,14 +164,13 @@ function EventRow({ e }: { e: Event }) {
 }
 
 function CommentRow({ c, code }: { c: Comment; code: string }) {
-	const trpc = useTRPC();
 	const qc = useQueryClient();
 	const [editing, setEditing] = useState(false);
 	// 接口回的就是最新列表（见 commentRouter），直接换上，不再查一趟
 	const replace = (list: Comment[]) =>
-		qc.setQueryData(trpc.comment.list.queryKey({ code }), list);
+		qc.setQueryData(orpc.comment.list.queryKey({ input: { code } }), list);
 	const edit = useMutation(
-		trpc.comment.edit.mutationOptions({
+		orpc.comment.update.mutationOptions({
 			onSuccess: (list) => {
 				replace(list);
 				setEditing(false);
@@ -169,19 +179,20 @@ function CommentRow({ c, code }: { c: Comment; code: string }) {
 		}),
 	);
 	const remove = useMutation(
-		trpc.comment.delete.mutationOptions({
+		orpc.comment.delete.mutationOptions({
 			onSuccess: replace,
 			onError: (err) => toast.error(err.message),
 		}),
 	);
 	const edited =
-		!c.deletedAt && c.updatedAt.getTime() - c.createdAt.getTime() > 1000;
+		!c.deletedAt && Date.parse(c.updatedAt) - Date.parse(c.createdAt) > 1000;
 	return (
 		<li className="relative flex gap-3">
 			<UserAvatar className="z-10 size-8 ring-4 ring-card" user={c.author} />
 			<div className="min-w-0 flex-1 rounded-lg border bg-card">
 				<div className="flex items-center gap-2 border-b bg-muted/40 px-4 py-2">
 					<span className="font-medium text-sm">{c.author.name}</span>
+					{c.apiKeyName && <ApiBadge keyName={c.apiKeyName} />}
 					<Time at={c.createdAt} />
 					{edited && (
 						<span className="text-muted-foreground text-xs">已编辑</span>
@@ -200,7 +211,8 @@ function CommentRow({ c, code }: { c: Comment; code: string }) {
 							<Button
 								disabled={remove.isPending}
 								onClick={() => {
-									if (confirm("删除这条评论？")) remove.mutate({ id: c.id });
+									if (confirm("删除这条评论？"))
+										remove.mutate({ code, id: c.id });
 								}}
 								size="xs"
 								variant="ghost"
@@ -217,7 +229,7 @@ function CommentRow({ c, code }: { c: Comment; code: string }) {
 						<CommentEditor
 							initial={c.body}
 							onCancel={() => setEditing(false)}
-							onSubmit={(body) => edit.mutateAsync({ id: c.id, body })}
+							onSubmit={(body) => edit.mutateAsync({ code, id: c.id, body })}
 							pending={edit.isPending}
 							submitLabel="保存"
 						/>
@@ -238,14 +250,15 @@ export function ItemActivity({
 	code: string;
 	canComment: boolean;
 }) {
-	const trpc = useTRPC();
 	const qc = useQueryClient();
-	const events = useQuery(trpc.item.timeline.queryOptions({ code }));
-	const comments = useQuery(trpc.comment.list.queryOptions({ code }));
+	const events = useQuery(orpc.item.timeline.queryOptions({ input: { code } }));
+	const comments = useQuery(
+		orpc.comment.list.queryOptions({ input: { code } }),
+	);
 	const add = useMutation(
-		trpc.comment.add.mutationOptions({
+		orpc.comment.create.mutationOptions({
 			onSuccess: (list) =>
-				qc.setQueryData(trpc.comment.list.queryKey({ code }), list),
+				qc.setQueryData(orpc.comment.list.queryKey({ input: { code } }), list),
 			onError: (err) => toast.error(err.message),
 		}),
 	);
@@ -260,7 +273,7 @@ export function ItemActivity({
 			key: `c${c.id}`,
 			c,
 		})),
-	].sort((a, b) => a.at.getTime() - b.at.getTime());
+	].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
 
 	return (
 		<div>

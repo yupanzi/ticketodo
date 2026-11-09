@@ -7,7 +7,7 @@ import {
 	parseMonth,
 	parseScheduleScope,
 } from "~/lib/schedule-params";
-import { getQueryClient, HydrateClient, trpc } from "~/trpc/server";
+import { getQueryClient, HydrateClient, orpc } from "~/orpc/server";
 
 export const metadata: Metadata = { title: "日历视图" };
 
@@ -19,7 +19,9 @@ export default async function CalendarPage({
 	const month = parseMonth(params.month, todayInAppTz());
 	const scope = parseScheduleScope(params.scope);
 	await getQueryClient().prefetchQuery(
-		trpc.item.calendar.queryOptions(calendarQueryInput(month, scope)),
+		orpc.view.calendar.queryOptions({
+			input: calendarQueryInput(month, scope),
+		}),
 	);
 	return (
 		<HydrateClient>

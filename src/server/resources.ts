@@ -65,6 +65,11 @@ export const AUDIT_ACTIONS = {
 	tagMerge: "tag.merge",
 	tagDelete: "tag.delete",
 
+	/** API key 的签发、重新签发（换密钥）、撤销 */
+	apiKeyCreate: "apiKey.create",
+	apiKeyRotate: "apiKey.rotate",
+	apiKeyRevoke: "apiKey.revoke",
+
 	/** 到期提醒的一次运行，actor 是 system，details 带计数 */
 	notifyDueRemind: "notify.dueRemind",
 } as const;

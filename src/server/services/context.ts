@@ -3,7 +3,7 @@ import type { AuditEntry, AuditSource } from "~/server/audit/record";
 import type { Database } from "~/server/db";
 import type { Log } from "~/server/log";
 
-/** 服务层的调用上下文：tRPC 从会话与请求拼出来，测试直接构造 */
+/** 服务层的调用上下文：API 层从会话或 API key 与请求拼出来，测试直接构造 */
 export interface ServiceContext {
 	db: Database;
 	actor: Actor & { name: string };
@@ -24,6 +24,8 @@ export function actorAudit(
 	| "method"
 	| "path"
 	| "requestId"
+	| "apiKeyId"
+	| "apiKeyName"
 > {
 	return {
 		actorType: "user",

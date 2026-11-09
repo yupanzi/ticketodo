@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { ItemDetail } from "~/components/item-detail";
-import { getQueryClient, HydrateClient, trpc } from "~/trpc/server";
+import { getQueryClient, HydrateClient, orpc } from "~/orpc/server";
 
 export async function generateMetadata({
 	params,
@@ -19,9 +19,9 @@ export default async function ItemPage({ params }: PageProps<"/items/[code]">) {
 	// 看不见的单子预取失败，客户端照常显示 NOT_FOUND
 	const qc = getQueryClient();
 	await Promise.all([
-		qc.prefetchQuery(trpc.item.byCode.queryOptions({ code })),
-		qc.prefetchQuery(trpc.item.timeline.queryOptions({ code })),
-		qc.prefetchQuery(trpc.comment.list.queryOptions({ code })),
+		qc.prefetchQuery(orpc.item.get.queryOptions({ input: { code } })),
+		qc.prefetchQuery(orpc.item.timeline.queryOptions({ input: { code } })),
+		qc.prefetchQuery(orpc.comment.list.queryOptions({ input: { code } })),
 	]);
 	return (
 		<HydrateClient>

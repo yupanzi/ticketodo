@@ -33,7 +33,7 @@ import {
 } from "~/domain/item-list";
 import { formatDayRange } from "~/lib/format";
 import { cn } from "~/lib/utils";
-import { useTRPC } from "~/trpc/react";
+import { orpc } from "~/orpc/client";
 
 import { Chip } from "./chip";
 import { DayRangeCalendar } from "./date-picker";
@@ -218,15 +218,15 @@ export function PeopleFacet({
 	selected: string[];
 	onChange: (ids: string[]) => void;
 }) {
-	const trpc = useTRPC();
 	const me = useMe();
 	const [open, setOpen] = useState(false);
 	const { q, setQ, users: found, isFetching } = useUserSearch(open);
 	const { data: picked = [] } = useQuery(
-		trpc.user.byIds.queryOptions(
-			{ ids: selected },
-			{ enabled: selected.length > 0, placeholderData: keepPreviousData },
-		),
+		orpc.user.list.queryOptions({
+			input: { ids: selected },
+			enabled: selected.length > 0,
+			placeholderData: keepPreviousData,
+		}),
 	);
 	const rest = found
 		.filter((u) => !selected.includes(u.id))

@@ -19,12 +19,15 @@ const DATE_TIME = new Intl.DateTimeFormat("zh-CN", {
 	hour12: false,
 });
 
-export function formatDateTime(d: Date): string {
-	return DATE_TIME.format(d);
+/** 时间戳在浏览器里是 ISO 字符串（API 的 JSON），服务端是 Date：两种都收 */
+export type Timestamp = Date | string;
+
+export function formatDateTime(d: Timestamp): string {
+	return DATE_TIME.format(new Date(d));
 }
 
-export function formatRelative(d: Date): string {
-	return formatDistanceToNow(d, { locale: zhCN, addSuffix: true });
+export function formatRelative(d: Timestamp): string {
+	return formatDistanceToNow(new Date(d), { locale: zhCN, addSuffix: true });
 }
 
 /** `YYYY-MM-DD` → `10月1日`（北京时间的今年省略年份） */

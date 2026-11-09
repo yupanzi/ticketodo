@@ -1,5 +1,5 @@
 /**
- * 请求 id：`proxy.ts` 定下并写进请求头，下游（tRPC context、better-auth hook）从这里读，日志与审计同值。
+ * 请求 id：`proxy.ts` 定下并写进请求头，下游（API context、better-auth hook）从这里读，日志与审计同值。
  * 不 import 任何东西：proxy 也引它。
  */
 export const REQUEST_ID_HEADER = "x-request-id";

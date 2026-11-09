@@ -22,25 +22,24 @@ import {
 	TableRow,
 } from "~/components/ui/table";
 import { TAG_COLORS, TAG_NAME_MAX_LENGTH, type TagColor } from "~/domain/tag";
-import { type RouterOutputs, useTRPC } from "~/trpc/react";
+import { type ApiOutputs, orpc } from "~/orpc/client";
 
 import { TagBadge } from "./badges";
 import { PageHeader, Panel } from "./layout";
 
-type Tag = RouterOutputs["tag"]["list"][number];
+type Tag = ApiOutputs["tag"]["list"][number];
 
 function TagRow({ tag, all }: { tag: Tag; all: Tag[] }) {
-	const trpc = useTRPC();
 	const qc = useQueryClient();
 	const [name, setName] = useState(tag.name);
 	const done = {
 		onSuccess: () =>
-			qc.invalidateQueries({ queryKey: trpc.tag.list.queryKey() }),
+			qc.invalidateQueries({ queryKey: orpc.tag.list.queryKey() }),
 		onError: (err: { message: string }) => toast.error(err.message),
 	};
-	const update = useMutation(trpc.tag.update.mutationOptions(done));
-	const merge = useMutation(trpc.tag.merge.mutationOptions(done));
-	const remove = useMutation(trpc.tag.delete.mutationOptions(done));
+	const update = useMutation(orpc.tag.update.mutationOptions(done));
+	const merge = useMutation(orpc.tag.merge.mutationOptions(done));
+	const remove = useMutation(orpc.tag.delete.mutationOptions(done));
 	return (
 		<TableRow>
 			<TableCell>
@@ -98,7 +97,7 @@ function TagRow({ tag, all }: { tag: Tag; all: Tag[] }) {
 					onValueChange={(target) => {
 						const to = all.find((t) => String(t.id) === target);
 						if (to && confirm(`把「${tag.name}」并入「${to.name}」？`))
-							merge.mutate({ sourceId: tag.id, targetId: to.id });
+							merge.mutate({ id: tag.id, targetId: to.id });
 					}}
 					value=""
 				>
@@ -135,8 +134,7 @@ function TagRow({ tag, all }: { tag: Tag; all: Tag[] }) {
 }
 
 export function AdminTags() {
-	const trpc = useTRPC();
-	const { data = [] } = useQuery(trpc.tag.list.queryOptions());
+	const { data = [] } = useQuery(orpc.tag.list.queryOptions());
 	return (
 		<>
 			<PageHeader

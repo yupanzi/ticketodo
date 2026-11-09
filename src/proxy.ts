@@ -7,7 +7,8 @@ import { AUTH_COOKIE_PREFIX } from "~/server/resources";
 
 /**
  * 两件事：给每个请求定 x-request-id（写进请求头传给下游、也回给客户端），页面没有会话 cookie 时去登录页。
- * 只看 cookie 在不在，不查库：真正的会话校验在 `requireSession` 与 tRPC 的 protectedProcedure。
+ * 只看 cookie 在不在，不查库：真正的会话校验在 `requireSession` 与 API 的 `guard`。API 不重定向：
+ * 浏览器与 AI 打的是同一组接口，没登录回 401。
  */
 export function proxy(request: NextRequest) {
 	const env = getServerEnv();

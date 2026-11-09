@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 import { QuadrantBoard } from "~/components/quadrant-board";
 import { DEFAULT_BOARD_SCOPE } from "~/domain/item-list";
-import { getQueryClient, HydrateClient, trpc } from "~/trpc/server";
+import { getQueryClient, HydrateClient, orpc } from "~/orpc/server";
 
 export const metadata: Metadata = { title: "象限看板" };
 
@@ -11,9 +11,9 @@ export default async function BoardPage() {
 	const qc = getQueryClient();
 	await Promise.all([
 		qc.prefetchQuery(
-			trpc.item.board.queryOptions({ scope: DEFAULT_BOARD_SCOPE }),
+			orpc.view.board.queryOptions({ input: { scope: DEFAULT_BOARD_SCOPE } }),
 		),
-		qc.prefetchQuery(trpc.item.summary.queryOptions()),
+		qc.prefetchQuery(orpc.view.summary.queryOptions()),
 	]);
 	return (
 		<HydrateClient>

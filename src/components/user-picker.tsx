@@ -18,7 +18,7 @@ import {
 	PopoverContent,
 	PopoverTrigger,
 } from "~/components/ui/popover";
-import { useTRPC } from "~/trpc/react";
+import { orpc } from "~/orpc/client";
 
 import { UserChip } from "./user-avatar";
 
@@ -30,14 +30,14 @@ export interface PickedUser {
 
 /** 搜登录过的人（user 表）：弹层开着才查，换词时留着上次结果不闪 */
 export function useUserSearch(open: boolean) {
-	const trpc = useTRPC();
 	const [q, setQ] = useState("");
 	const deferred = useDeferredValue(q);
 	const { data: users = [], isFetching } = useQuery(
-		trpc.user.search.queryOptions(
-			{ q: deferred },
-			{ enabled: open, placeholderData: keepPreviousData },
-		),
+		orpc.user.list.queryOptions({
+			input: { q: deferred },
+			enabled: open,
+			placeholderData: keepPreviousData,
+		}),
 	);
 	return { q, setQ, users, isFetching };
 }

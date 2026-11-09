@@ -10,13 +10,16 @@ import { auditLogs } from "~/server/db/schema";
 import { logger } from "~/server/log";
 import type { AuditAction } from "~/server/resources";
 
-/** 请求来源。tRPC context 与 better-auth hook 各自组装 */
+/** 请求来源。API context 与 better-auth hook 各自组装 */
 export interface AuditSource {
 	ip?: string | null;
 	userAgent?: string | null;
 	method?: string | null;
 	path?: string | null;
 	requestId?: string | null;
+	/** 经 API key 的请求才有 */
+	apiKeyId?: string | null;
+	apiKeyName?: string | null;
 }
 
 export interface AuditEntry extends AuditSource {
@@ -51,6 +54,8 @@ function toRow(entry: AuditEntry): typeof auditLogs.$inferInsert {
 		method: entry.method ?? null,
 		path: normalizeRequestPath(entry.path),
 		requestId: entry.requestId ?? null,
+		apiKeyId: entry.apiKeyId ?? null,
+		apiKeyName: entry.apiKeyName ?? null,
 		details: entry.details ?? null,
 	};
 }

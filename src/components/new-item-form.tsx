@@ -10,7 +10,7 @@ import { Button } from "~/components/ui/button";
 import type { ItemType } from "~/domain/item";
 import type { Priority } from "~/domain/priority";
 import { cn } from "~/lib/utils";
-import { useTRPC } from "~/trpc/react";
+import { orpc } from "~/orpc/client";
 
 import { ItemFields, type ItemFieldValues } from "./item-fields";
 import { Field, Panel } from "./layout";
@@ -79,7 +79,6 @@ export function NewItemForm({
 	initialType: ItemType;
 	initialPriority: Priority;
 }) {
-	const trpc = useTRPC();
 	const qc = useQueryClient();
 	const router = useRouter();
 	const [type, setType] = useState<ItemType>(initialType);
@@ -94,10 +93,13 @@ export function NewItemForm({
 	});
 
 	const create = useMutation(
-		trpc.item.create.mutationOptions({
-			// 看板、列表在后台刷新，不等（理由见 useItemCache）
-			onSuccess: ({ code }) => {
-				void qc.invalidateQueries({ queryKey: trpc.item.pathKey() });
+		orpc.item.create.mutationOptions({
+			// 接口回的就是新单的详情：先放进缓存；看板、列表在后台刷新，不等（理由见 useItemCache）
+			onSuccess: (detail) => {
+				const { code } = detail.item;
+				qc.setQueryData(orpc.item.get.queryKey({ input: { code } }), detail);
+				void qc.invalidateQueries({ queryKey: orpc.item.key() });
+				void qc.invalidateQueries({ queryKey: orpc.view.key() });
 				toast.success(`已创建 ${code}`);
 				router.push(`/items/${code}`);
 			},

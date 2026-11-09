@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
 	bigint,
 	index,
@@ -13,6 +14,7 @@ import {
 	AUDIT_STATUSES,
 	type AuditDetails,
 	MAX_ACTOR_ID_LENGTH,
+	MAX_API_KEY_ID_LENGTH,
 	MAX_IP_LENGTH,
 	MAX_REQUEST_ID_LENGTH,
 	MAX_REQUEST_PATH_LENGTH,
@@ -64,6 +66,12 @@ export const auditLogs = createTable(
 		path: varchar("path", { length: MAX_REQUEST_PATH_LENGTH }),
 		/** `proxy.ts` 定的 x-request-id，与日志的 reqId 同值 */
 		requestId: varchar("request_id", { length: MAX_REQUEST_ID_LENGTH }),
+		/**
+		 * 经 API key 的请求：key id 与名称快照（不建外键，理由同 actor）。null = 浏览器或系统。
+		 * 名称进时间线白名单，界面据此标「API」
+		 */
+		apiKeyId: varchar("api_key_id", { length: MAX_API_KEY_ID_LENGTH }),
+		apiKeyName: varchar("api_key_name", { length: 255 }),
 
 		details: jsonb("details").$type<AuditDetails>(),
 	},
@@ -74,5 +82,9 @@ export const auditLogs = createTable(
 		// 时间线按它取
 		index("ticketodo_audit_log_target_idx").on(t.targetType, t.targetId, t.at),
 		index("ticketodo_audit_log_request_id_idx").on(t.requestId),
+		// key 泄露时按它查「这个 key 干过什么」；浏览器操作占大多数，只索引非空的
+		index("ticketodo_audit_log_api_key_idx")
+			.on(t.apiKeyId, t.at)
+			.where(sql`${t.apiKeyId} IS NOT NULL`),
 	],
 );

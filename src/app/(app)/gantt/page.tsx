@@ -7,7 +7,7 @@ import {
 	parseGanttStart,
 	parseScheduleScope,
 } from "~/lib/schedule-params";
-import { getQueryClient, HydrateClient, trpc } from "~/trpc/server";
+import { getQueryClient, HydrateClient, orpc } from "~/orpc/server";
 
 export const metadata: Metadata = { title: "甘特视图" };
 
@@ -17,7 +17,7 @@ export default async function GanttPage({ searchParams }: PageProps<"/gantt">) {
 	const start = parseGanttStart(params.from, todayInAppTz());
 	const scope = parseScheduleScope(params.scope);
 	await getQueryClient().prefetchQuery(
-		trpc.item.gantt.queryOptions(ganttQueryInput(start, scope)),
+		orpc.view.gantt.queryOptions({ input: ganttQueryInput(start, scope) }),
 	);
 	return (
 		<HydrateClient>

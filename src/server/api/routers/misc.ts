@@ -1,22 +1,12 @@
-import { z } from "zod";
-
-import { AUDIT_STATUSES } from "~/domain/audit";
-import { TAG_COLORS, TAG_NAME_MAX_LENGTH } from "~/domain/tag";
-import {
-	adminProcedure,
-	createTRPCRouter,
-	protectedProcedure,
-} from "~/server/api/trpc";
-import { USER_ROLES } from "~/server/db/schema";
 import { AUDIT_ACTIONS } from "~/server/resources";
-import { queryAudit } from "~/server/services/audit-query";
 import {
-	addComment,
-	COMMENT_MAX_LENGTH,
-	deleteComment,
-	editComment,
-	listComments,
-} from "~/server/services/comment";
+	createApiKey,
+	listAllApiKeys,
+	listMyApiKeys,
+	revokeApiKey,
+	rotateApiKey,
+} from "~/server/services/api-key";
+import { queryAudit } from "~/server/services/audit-query";
 import {
 	listNotifications,
 	markRead,
@@ -35,117 +25,139 @@ import {
 	usersByIds,
 } from "~/server/services/user";
 
-const code = z.string().trim().min(1).max(32);
-const body = z.string().trim().min(1, "评论不能为空").max(COMMENT_MAX_LENGTH);
-const id = z.number().int().positive();
+import { openApiSpec } from "../openapi";
+import { guard, os } from "../orpc";
 
-/** 评论的变更都回这张单的最新评论列表（与 list 同形），理由同 item router 的 `detailAfter` */
-export const commentRouter = createTRPCRouter({
-	list: protectedProcedure
-		.input(z.object({ code }))
-		.query(({ ctx, input }) => listComments(ctx.svc, input.code)),
-	add: protectedProcedure
-		.meta({ audit: AUDIT_ACTIONS.commentCreate })
-		.input(z.object({ code, body }))
-		.mutation(async ({ ctx, input }) => {
-			await addComment(ctx.svc, input.code, input.body);
-			return listComments(ctx.svc, input.code);
+const ok = { ok: true } as const;
+
+export const tagRouter = {
+	list: os.tag.list.use(guard()).handler(({ context }) => listTags(context.db)),
+
+	update: os.tag.update
+		.use(guard({ audit: AUDIT_ACTIONS.tagUpdate, admin: true }))
+		.handler(({ context, input: { id, ...patch } }) =>
+			updateTag(context.svc, id, patch),
+		),
+
+	merge: os.tag.merge
+		.use(guard({ audit: AUDIT_ACTIONS.tagMerge, admin: true }))
+		.handler(async ({ context, input }) => {
+			await mergeTag(context.svc, input.id, input.targetId);
+			return ok;
 		}),
-	edit: protectedProcedure
-		.meta({ audit: AUDIT_ACTIONS.commentUpdate })
-		.input(z.object({ id, body }))
-		.mutation(async ({ ctx, input }) =>
-			listComments(ctx.svc, await editComment(ctx.svc, input.id, input.body)),
-		),
-	delete: protectedProcedure
-		.meta({ audit: AUDIT_ACTIONS.commentDelete })
-		.input(z.object({ id }))
-		.mutation(async ({ ctx, input }) =>
-			listComments(ctx.svc, await deleteComment(ctx.svc, input.id)),
-		),
-});
 
-export const tagRouter = createTRPCRouter({
-	list: protectedProcedure.query(({ ctx }) => listTags(ctx.db)),
-	update: adminProcedure
-		.meta({ audit: AUDIT_ACTIONS.tagUpdate })
-		.input(
-			z.object({
-				id,
-				name: z.string().trim().min(1).max(TAG_NAME_MAX_LENGTH).optional(),
-				color: z.enum(TAG_COLORS).optional(),
+	delete: os.tag.delete
+		.use(guard({ audit: AUDIT_ACTIONS.tagDelete, admin: true }))
+		.handler(async ({ context, input }) => {
+			await deleteTag(context.svc, input.id);
+			return ok;
+		}),
+};
+
+export const userRouter = {
+	me: os.user.me.use(guard()).handler(({ context }) => ({
+		...context.svc.actor,
+		apiKey: context.principal.apiKey,
+	})),
+
+	list: os.user.list
+		.use(guard())
+		.handler(({ context, input }) =>
+			input.ids?.length
+				? usersByIds(context.db, input.ids)
+				: searchUsers(context.db, input.q ?? "", input.limit),
+		),
+};
+
+export const notificationRouter = {
+	list: os.notification.list
+		.use(guard())
+		.handler(({ context, input }) => listNotifications(context.svc, input)),
+
+	unreadCount: os.notification.unreadCount
+		.use(guard())
+		.handler(async ({ context }) => ({
+			count: await unreadCount(context.svc),
+		})),
+
+	markRead: os.notification.markRead
+		.use(guard())
+		.handler(async ({ context, input }) => {
+			await markRead(context.svc, input.ids);
+			return ok;
+		}),
+
+	markAllRead: os.notification.markAllRead
+		.use(guard())
+		.handler(async ({ context }) => {
+			await markRead(context.svc, "all");
+			return ok;
+		}),
+};
+
+export const apiKeyRouter = {
+	list: os.apiKey.list
+		.use(guard({ browserOnly: true }))
+		.handler(({ context }) => listMyApiKeys(context.svc)),
+
+	create: os.apiKey.create
+		.use(guard({ audit: AUDIT_ACTIONS.apiKeyCreate, browserOnly: true }))
+		.handler(({ context, input }) => createApiKey(context.svc, input)),
+
+	rotate: os.apiKey.rotate
+		.use(guard({ audit: AUDIT_ACTIONS.apiKeyRotate, browserOnly: true }))
+		.handler(({ context, input }) => rotateApiKey(context.svc, input.id)),
+
+	revoke: os.apiKey.revoke
+		.use(guard({ audit: AUDIT_ACTIONS.apiKeyRevoke, browserOnly: true }))
+		.handler(async ({ context, input }) => {
+			await revokeApiKey(context.svc, input.id);
+			return ok;
+		}),
+};
+
+export const adminRouter = {
+	users: os.admin.users
+		.use(guard({ admin: true }))
+		.handler(({ context }) => listUsersForAdmin(context.db)),
+
+	setRole: os.admin.setRole
+		.use(guard({ audit: AUDIT_ACTIONS.adminGrant, admin: true }))
+		.handler(async ({ context, input }) => {
+			await setUserRole(context.svc, input.id, input.role);
+			return ok;
+		}),
+
+	auditLogs: os.admin.auditLogs
+		.use(guard({ admin: true }))
+		.handler(({ context, input: { from, to, ...rest } }) =>
+			queryAudit(context.db, {
+				...rest,
+				from: from ? new Date(from) : undefined,
+				to: to ? new Date(to) : undefined,
+			}),
+		),
+
+	apiKeys: os.admin.apiKeys
+		.use(guard({ admin: true, browserOnly: true }))
+		.handler(({ context }) => listAllApiKeys(context.svc)),
+
+	revokeApiKey: os.admin.revokeApiKey
+		.use(
+			guard({
+				audit: AUDIT_ACTIONS.apiKeyRevoke,
+				admin: true,
+				browserOnly: true,
 			}),
 		)
-		.mutation(({ ctx, input: { id, ...patch } }) =>
-			updateTag(ctx.svc, id, patch),
-		),
-	merge: adminProcedure
-		.meta({ audit: AUDIT_ACTIONS.tagMerge })
-		.input(z.object({ sourceId: id, targetId: id }))
-		.mutation(({ ctx, input }) =>
-			mergeTag(ctx.svc, input.sourceId, input.targetId),
-		),
-	delete: adminProcedure
-		.meta({ audit: AUDIT_ACTIONS.tagDelete })
-		.input(z.object({ id }))
-		.mutation(({ ctx, input }) => deleteTag(ctx.svc, input.id)),
-});
+		.handler(async ({ context, input }) => {
+			await revokeApiKey(context.svc, input.id);
+			return ok;
+		}),
+};
 
-export const userRouter = createTRPCRouter({
-	me: protectedProcedure.query(({ ctx }) => ctx.svc.actor),
-	search: protectedProcedure
-		.input(
-			z.object({
-				q: z.string().max(64).default(""),
-				limit: z.number().int().min(1).max(50).default(20),
-			}),
-		)
-		.query(({ ctx, input }) => searchUsers(ctx.db, input.q, input.limit)),
-	/** 地址栏里的人员筛选只有 id，显示名字靠它 */
-	byIds: protectedProcedure
-		.input(z.object({ ids: z.array(z.string().min(1).max(64)).max(50) }))
-		.query(({ ctx, input }) => usersByIds(ctx.db, input.ids)),
-});
-
-export const notificationRouter = createTRPCRouter({
-	list: protectedProcedure
-		.input(
-			z.object({
-				cursor: id.optional(),
-				limit: z.number().int().min(1).max(100).default(30),
-				unreadOnly: z.boolean().default(false),
-			}),
-		)
-		.query(({ ctx, input }) => listNotifications(ctx.svc, input)),
-	unreadCount: protectedProcedure.query(({ ctx }) => unreadCount(ctx.svc)),
-	markRead: protectedProcedure
-		.input(z.object({ ids: z.array(id).min(1).max(100) }))
-		.mutation(({ ctx, input }) => markRead(ctx.svc, input.ids)),
-	markAllRead: protectedProcedure.mutation(({ ctx }) =>
-		markRead(ctx.svc, "all"),
-	),
-});
-
-export const adminRouter = createTRPCRouter({
-	users: adminProcedure.query(({ ctx }) => listUsersForAdmin(ctx.db)),
-	setRole: adminProcedure
-		.meta({ audit: AUDIT_ACTIONS.adminGrant })
-		.input(z.object({ userId: z.string().min(1), role: z.enum(USER_ROLES) }))
-		.mutation(({ ctx, input }) =>
-			setUserRole(ctx.svc, input.userId, input.role),
-		),
-	audit: adminProcedure
-		.input(
-			z.object({
-				from: z.date().optional(),
-				to: z.date().optional(),
-				actorId: z.string().max(255).optional(),
-				action: z.string().max(96).optional(),
-				status: z.enum(AUDIT_STATUSES).optional(),
-				target: z.string().max(255).optional(),
-				cursor: id.optional(),
-				limit: z.number().int().min(1).max(200).default(50),
-			}),
-		)
-		.query(({ ctx, input }) => queryAudit(ctx.db, input)),
-});
+export const docsRouter = {
+	openapi: os.docs.openapi
+		.use(guard())
+		.handler(() => openApiSpec() as Promise<Record<string, unknown>>),
+};

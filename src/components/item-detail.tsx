@@ -46,7 +46,7 @@ import { type ItemStatus, type ItemType, STATUS_LABEL } from "~/domain/item";
 import type { Priority } from "~/domain/priority";
 import { findEdge } from "~/domain/status";
 import { formatDateTime, formatDay } from "~/lib/format";
-import { type RouterOutputs, useTRPC } from "~/trpc/react";
+import { type ApiOutputs, orpc } from "~/orpc/client";
 
 import {
 	DueBadge,
@@ -71,7 +71,7 @@ import { PriorityPicker } from "./priority-picker";
 import { UserChip } from "./user-avatar";
 import { type PickedUser, UserPicker } from "./user-picker";
 
-type Detail = RouterOutputs["item"]["byCode"];
+type Detail = ApiOutputs["item"]["get"];
 type Item = Detail["item"];
 
 /**
@@ -96,12 +96,11 @@ function emphasisOf(
 }
 
 function StatusActions({ detail }: { detail: Detail }) {
-	const trpc = useTRPC();
 	const cache = useItemCache();
 	const { item, permissions } = detail;
 	const statuses = permissions.statuses;
 	const transition = useMutation(
-		trpc.item.transition.mutationOptions({
+		orpc.item.transition.mutationOptions({
 			// 状态是最常点的：先改界面，失败回滚
 			onMutate: ({ to }) => cache.optimisticStatus(detail, to),
 			onSuccess: cache.apply,
@@ -149,7 +148,6 @@ function EditDialog({
 	open: boolean;
 	onOpenChange: (o: boolean) => void;
 }) {
-	const trpc = useTRPC();
 	const cache = useItemCache();
 	const initial = (): ItemFieldValues => ({
 		title: item.title,
@@ -161,7 +159,7 @@ function EditDialog({
 	});
 	const [fields, setFields] = useState(initial);
 	const update = useMutation(
-		trpc.item.update.mutationOptions({
+		orpc.item.update.mutationOptions({
 			onSuccess: (detail) => {
 				cache.apply(detail);
 				onOpenChange(false);
@@ -234,11 +232,10 @@ function TriageDialog({
 	open: boolean;
 	onOpenChange: (o: boolean) => void;
 }) {
-	const trpc = useTRPC();
 	const cache = useItemCache();
 	const [picked, setPicked] = useState<Priority | null>(null);
 	const triage = useMutation(
-		trpc.item.update.mutationOptions({
+		orpc.item.update.mutationOptions({
 			onSuccess: (detail) => {
 				cache.apply(detail);
 				onOpenChange(false);
@@ -287,7 +284,6 @@ function PickAssigneeDialog({
 	open: boolean;
 	onOpenChange: (o: boolean) => void;
 }) {
-	const trpc = useTRPC();
 	const cache = useItemCache();
 	const [picked, setPicked] = useState<PickedUser | null>(null);
 	const done = {
@@ -298,8 +294,8 @@ function PickAssigneeDialog({
 		},
 		onError: (err: { message: string }) => toast.error(err.message),
 	};
-	const assign = useMutation(trpc.item.assign.mutationOptions(done));
-	const convert = useMutation(trpc.item.convert.mutationOptions(done));
+	const assign = useMutation(orpc.item.assign.mutationOptions(done));
+	const convert = useMutation(orpc.item.convert.mutationOptions(done));
 	const pending = assign.isPending || convert.isPending;
 	return (
 		<Dialog onOpenChange={onOpenChange} open={open}>
@@ -345,13 +341,12 @@ function DeleteDialog({
 	open: boolean;
 	onOpenChange: (o: boolean) => void;
 }) {
-	const trpc = useTRPC();
 	const router = useRouter();
 	const qc = useQueryClient();
 	const remove = useMutation(
-		trpc.item.delete.mutationOptions({
+		orpc.item.delete.mutationOptions({
 			onSuccess: () => {
-				void qc.invalidateQueries({ queryKey: trpc.item.pathKey() });
+				void qc.invalidateQueries({ queryKey: orpc.item.key() });
 				toast.success(`${item.code} 已删除`);
 				router.push("/");
 			},
@@ -384,14 +379,13 @@ function DeleteDialog({
 type DialogKind = "edit" | "triage" | "assign" | "convert" | "delete" | null;
 
 export function ItemDetail({ code }: { code: string }) {
-	const trpc = useTRPC();
 	const cache = useItemCache();
 	const [dialog, setDialog] = useState<DialogKind>(null);
 	const { data, error, isLoading } = useQuery(
-		trpc.item.byCode.queryOptions({ code }),
+		orpc.item.get.queryOptions({ input: { code } }),
 	);
 	const restore = useMutation(
-		trpc.item.restore.mutationOptions({
+		orpc.item.restore.mutationOptions({
 			onSuccess: cache.apply,
 			onError: (err) => toast.error(err.message),
 		}),

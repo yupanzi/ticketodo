@@ -1,4 +1,4 @@
-import { TRPCError } from "@trpc/server";
+import { ORPCError } from "@orpc/server";
 import { and, eq, sql } from "drizzle-orm";
 import { beforeAll, describe, expect, it } from "vitest";
 
@@ -7,8 +7,8 @@ import { formatMention } from "~/domain/mention";
 import type { Priority } from "~/domain/priority";
 import { auditLogs, notifications } from "~/server/db/schema";
 import { AUDIT_ACTIONS } from "~/server/resources";
+import { actor } from "~/test/api";
 import { auditsFor, hasTestDb, testDb, uniq } from "~/test/db";
-import { actor } from "~/test/trpc";
 
 type Actor = Awaited<ReturnType<typeof actor>>;
 type ListInput = Parameters<Actor["api"]["item"]["list"]>[0];
@@ -18,7 +18,7 @@ async function codeOf<T>(p: Promise<T>): Promise<string | undefined> {
 		await p;
 		return undefined;
 	} catch (err) {
-		return err instanceof TRPCError ? err.code : "NOT_TRPC";
+		return err instanceof ORPCError ? err.code : "NOT_ORPC";
 	}
 }
 
@@ -39,7 +39,9 @@ async function newTicket(
 		...extra
 	}: { priority?: Priority; dueDate?: string; tags?: string[] } = {},
 ) {
-	const { code } = await by.api.item.create({
+	const {
+		item: { code },
+	} = await by.api.item.create({
 		type: "ticket",
 		title: "打印机坏了",
 		assigneeId: assignee.user.id,
@@ -80,7 +82,7 @@ describe.skipIf(!hasTestDb)("item API", () => {
 			});
 			expect(code).toMatch(/^TK-\d{8}-\d{4,}$/);
 
-			const { item } = await reporter.api.item.byCode({ code });
+			const { item } = await reporter.api.item.get({ code });
 			expect(item.assignee.id).toBe(assignee.user.id);
 			expect(item.tags.map((t) => t.name)).toEqual(["网络"]);
 
@@ -94,12 +96,14 @@ describe.skipIf(!hasTestDb)("item API", () => {
 		});
 
 		it("todo 的负责人恒为本人，忽略传入的人", async () => {
-			const { code } = await reporter.api.item.create({
+			const {
+				item: { code },
+			} = await reporter.api.item.create({
 				type: "todo",
 				title: "写周报",
 				priority: "P1",
 			});
-			const { item } = await reporter.api.item.byCode({ code });
+			const { item } = await reporter.api.item.get({ code });
 			expect(item.assignee.id).toBe(reporter.user.id);
 		});
 
@@ -108,7 +112,7 @@ describe.skipIf(!hasTestDb)("item API", () => {
 				Array.from({ length: 20 }, () =>
 					reporter.api.item
 						.create({ type: "todo", title: "并发", priority: "P3" })
-						.then((r) => r.code),
+						.then((r) => r.item.code),
 				),
 			);
 			const seqs = codes
@@ -121,14 +125,14 @@ describe.skipIf(!hasTestDb)("item API", () => {
 
 	describe("可见性", () => {
 		it("别人的 todo：旁人 NOT_FOUND 且不记审计，管理员看得到", async () => {
-			const { code } = await reporter.api.item.create({
+			const {
+				item: { code },
+			} = await reporter.api.item.create({
 				type: "todo",
 				title: "私事",
 				priority: "P2",
 			});
-			expect(await codeOf(bystander.api.item.byCode({ code }))).toBe(
-				"NOT_FOUND",
-			);
+			expect(await codeOf(bystander.api.item.get({ code }))).toBe("NOT_FOUND");
 			expect(
 				await codeOf(bystander.api.item.transition({ code, to: "closed" })),
 			).toBe("NOT_FOUND");
@@ -143,7 +147,7 @@ describe.skipIf(!hasTestDb)("item API", () => {
 				);
 			expect(failures).toEqual([]);
 
-			expect((await admin.api.item.byCode({ code })).item.title).toBe("私事");
+			expect((await admin.api.item.get({ code })).item.title).toBe("私事");
 			const list = await bystander.api.item.list({ q: code });
 			expect(list.items).toEqual([]);
 		});
@@ -157,7 +161,7 @@ describe.skipIf(!hasTestDb)("item API", () => {
 					reporter.api.item.assign({ code, assigneeId: other.user.id }),
 				),
 			).toBe("FORBIDDEN");
-			const { item } = await admin.api.item.byCode({ code });
+			const { item } = await admin.api.item.get({ code });
 			const [failure] = await auditsFor("item", item.id, [
 				AUDIT_ACTIONS.itemAssign,
 			]);
@@ -173,7 +177,7 @@ describe.skipIf(!hasTestDb)("item API", () => {
 			await assignee.api.item.transition({ code, to: "in_progress" });
 			await assignee.api.item.assign({ code, assigneeId: other.user.id });
 
-			const { item } = await other.api.item.byCode({ code });
+			const { item } = await other.api.item.get({ code });
 			expect(item.assignee.id).toBe(other.user.id);
 			expect(item.status).toBe("in_progress");
 			expect((await notificationsOf(other.user.id)).at(-1)?.kind).toBe(
@@ -193,7 +197,7 @@ describe.skipIf(!hasTestDb)("item API", () => {
 		it("管理员可以改派；不能指派给不存在的人", async () => {
 			const code = await newTicket(reporter, assignee);
 			await admin.api.item.assign({ code, assigneeId: bystander.user.id });
-			expect((await admin.api.item.byCode({ code })).item.assignee.id).toBe(
+			expect((await admin.api.item.get({ code })).item.assignee.id).toBe(
 				bystander.user.id,
 			);
 			expect(
@@ -212,10 +216,11 @@ describe.skipIf(!hasTestDb)("item API", () => {
 			).toBe("FORBIDDEN");
 			await reporter.api.item.transition({ code, to: "closed" });
 
-			const { item } = await reporter.api.item.byCode({ code });
+			const { item } = await reporter.api.item.get({ code });
 			expect(item.status).toBe("closed");
-			expect(item.resolvedAt).toBeInstanceOf(Date);
-			expect(item.closedAt).toBeInstanceOf(Date);
+			// 与浏览器拿到的同形：时间戳是 ISO 字符串
+			expect(item.resolvedAt).toMatch(/^\d{4}-\d{2}-\d{2}T.*Z$/);
+			expect(item.closedAt).toMatch(/^\d{4}-\d{2}-\d{2}T.*Z$/);
 
 			const events = await reporter.api.item.timeline({ code });
 			expect(events.map((e) => e.summary)).toEqual([
@@ -231,7 +236,7 @@ describe.skipIf(!hasTestDb)("item API", () => {
 			await assignee.api.item.transition({ code, to: "resolved" });
 			await reporter.api.item.transition({ code, to: "closed" });
 			await reporter.api.item.transition({ code, to: "open" });
-			const { item } = await reporter.api.item.byCode({ code });
+			const { item } = await reporter.api.item.get({ code });
 			expect(item.resolvedAt).toBeNull();
 			expect(item.closedAt).toBeNull();
 		});
@@ -266,7 +271,7 @@ describe.skipIf(!hasTestDb)("item API", () => {
 
 		it("别人先改了：带旧版本号的保存 CONFLICT", async () => {
 			const code = await newTicket(reporter, assignee);
-			const { item } = await reporter.api.item.byCode({ code });
+			const { item } = await reporter.api.item.get({ code });
 			await assignee.api.item.update({ code, priority: "P2" });
 			expect(
 				await codeOf(
@@ -290,11 +295,19 @@ describe.skipIf(!hasTestDb)("item API", () => {
 	describe("时间线", () => {
 		it("只有白名单列，不含 ip / ua / 评论审计", async () => {
 			const code = await newTicket(reporter, assignee);
-			await bystander.api.comment.add({ code, body: "我也遇到了" });
+			await bystander.api.comment.create({ code, body: "我也遇到了" });
 			const events = await bystander.api.item.timeline({ code });
 			expect(events.map((e) => e.action)).toEqual([AUDIT_ACTIONS.itemCreate]);
 			expect(Object.keys(events[0] ?? {}).sort()).toEqual(
-				["action", "actorName", "at", "changes", "id", "summary"].sort(),
+				[
+					"action",
+					"actorName",
+					"apiKeyName",
+					"at",
+					"changes",
+					"id",
+					"summary",
+				].sort(),
 			);
 		});
 	});
@@ -302,7 +315,7 @@ describe.skipIf(!hasTestDb)("item API", () => {
 	describe("定级（优先级由接收方定）", () => {
 		it("ticket 建单是待定级；建单审计里没有优先级", async () => {
 			const code = await newTicket(reporter, assignee);
-			const { item, permissions } = await reporter.api.item.byCode({ code });
+			const { item, permissions } = await reporter.api.item.get({ code });
 			expect(item.priority).toBeNull();
 			expect(permissions.plan).toBe(false);
 			const [created] = await reporter.api.item.timeline({ code });
@@ -320,7 +333,7 @@ describe.skipIf(!hasTestDb)("item API", () => {
 			expect(
 				await codeOf(reporter.api.item.update({ code, priority: "P0" })),
 			).toBe("FORBIDDEN");
-			const { item } = await admin.api.item.byCode({ code });
+			const { item } = await admin.api.item.get({ code });
 			expect(item.priority).toBe("P1");
 			const failures = (
 				await auditsFor("item", item.id, [AUDIT_ACTIONS.itemUpdate])
@@ -344,7 +357,7 @@ describe.skipIf(!hasTestDb)("item API", () => {
 		it("改派保留优先级，定级权跟着新负责人走", async () => {
 			const code = await newTicket(reporter, assignee, { priority: "P1" });
 			await assignee.api.item.assign({ code, assigneeId: other.user.id });
-			expect((await other.api.item.byCode({ code })).item.priority).toBe("P1");
+			expect((await other.api.item.get({ code })).item.priority).toBe("P1");
 			expect(
 				await codeOf(assignee.api.item.update({ code, priority: "P3" })),
 			).toBe("FORBIDDEN");
@@ -377,7 +390,9 @@ describe.skipIf(!hasTestDb)("item API", () => {
 
 	describe("todo 转 ticket", () => {
 		it("转给别人：交由对方定级（变成待定级，审计记下）", async () => {
-			const { code } = await reporter.api.item.create({
+			const {
+				item: { code },
+			} = await reporter.api.item.create({
 				type: "todo",
 				title: "交出去",
 				priority: "P0",
@@ -393,7 +408,9 @@ describe.skipIf(!hasTestDb)("item API", () => {
 		});
 
 		it("转给自己：优先级照旧", async () => {
-			const { code } = await reporter.api.item.create({
+			const {
+				item: { code },
+			} = await reporter.api.item.create({
 				type: "todo",
 				title: "公开出来",
 				priority: "P2",
@@ -406,7 +423,9 @@ describe.skipIf(!hasTestDb)("item API", () => {
 		});
 
 		it("要指定负责人；此前的历史非管理员看不到", async () => {
-			const { code } = await reporter.api.item.create({
+			const {
+				item: { code },
+			} = await reporter.api.item.create({
 				type: "todo",
 				title: "私下记的事",
 				priority: "P1",
@@ -414,7 +433,7 @@ describe.skipIf(!hasTestDb)("item API", () => {
 			await reporter.api.item.update({ code, title: "私下记的事（细节）" });
 			await reporter.api.item.convert({ code, assigneeId: assignee.user.id });
 
-			const { item } = await bystander.api.item.byCode({ code });
+			const { item } = await bystander.api.item.get({ code });
 			expect(item.type).toBe("ticket");
 			expect(item.code).toBe(code);
 			const seen = await bystander.api.item.timeline({ code });
@@ -433,9 +452,7 @@ describe.skipIf(!hasTestDb)("item API", () => {
 				"FORBIDDEN",
 			);
 			await reporter.api.item.delete({ code });
-			expect(await codeOf(assignee.api.item.byCode({ code }))).toBe(
-				"NOT_FOUND",
-			);
+			expect(await codeOf(assignee.api.item.get({ code }))).toBe("NOT_FOUND");
 			expect((await assignee.api.item.list({ q: code })).items).toEqual([]);
 			expect((await admin.api.item.trash()).some((i) => i.code === code)).toBe(
 				true,
@@ -444,9 +461,7 @@ describe.skipIf(!hasTestDb)("item API", () => {
 				"FORBIDDEN",
 			);
 			await admin.api.item.restore({ code });
-			expect(
-				(await assignee.api.item.byCode({ code })).item.deletedAt,
-			).toBeNull();
+			expect((await assignee.api.item.get({ code })).item.deletedAt).toBeNull();
 		});
 	});
 
@@ -455,7 +470,7 @@ describe.skipIf(!hasTestDb)("item API", () => {
 			const working = await newTicket(reporter, assignee);
 			const waiting = await newTicket(assignee, other);
 			await other.api.item.transition({ code: waiting, to: "resolved" });
-			const board = await assignee.api.item.board({ scope: "mine" });
+			const board = await assignee.api.view.board({ scope: "mine" });
 			const codes = board.map((i) => i.code);
 			expect(codes).toContain(working);
 			expect(codes).toContain(waiting);
@@ -493,7 +508,7 @@ describe.skipIf(!hasTestDb)("item API", () => {
 				to: "resolved",
 			});
 
-			expect(await me.api.item.summary()).toEqual({
+			expect(await me.api.view.summary()).toEqual({
 				overdue: 1,
 				dueToday: 1,
 				awaitingConfirmation: 1,
@@ -607,12 +622,14 @@ describe.skipIf(!hasTestDb)("item API", () => {
 		});
 
 		it("游标是看不见的 todo：返回空页，不借翻页位置泄露它", async () => {
-			const { code } = await bystander.api.item.create({
+			const {
+				item: { code },
+			} = await bystander.api.item.create({
 				type: "todo",
 				title: "私事",
 				priority: "P0",
 			});
-			const { item } = await bystander.api.item.byCode({ code });
+			const { item } = await bystander.api.item.get({ code });
 			const page = await reporter.api.item.list({ cursor: item.id });
 			expect(page).toEqual({ items: [], nextCursor: null });
 		});
@@ -631,7 +648,9 @@ describe.skipIf(!hasTestDb)("item API", () => {
 			const closed = await newTicket(reporter, me, { dueDate: today });
 			await reporter.api.item.transition({ code: closed, to: "closed" });
 			const mine = await newTicket(me, reporter, { dueDate: today });
-			const { code: privateTodo } = await bystander.api.item.create({
+			const {
+				item: { code: privateTodo },
+			} = await bystander.api.item.create({
 				type: "todo",
 				title: "私事",
 				priority: "P1",
@@ -643,7 +662,7 @@ describe.skipIf(!hasTestDb)("item API", () => {
 				scope: "assigned" | "reported" | "all",
 				who: Actor = me,
 			) =>
-				(await who.api.item.calendar({ ...range, scope })).map((i) => i.code);
+				(await who.api.view.calendar({ ...range, scope })).map((i) => i.code);
 			expect(await codes("assigned")).toEqual([inRange]);
 			expect(await codes("reported")).toEqual([mine]);
 			const all = await codes("all");
@@ -657,7 +676,7 @@ describe.skipIf(!hasTestDb)("item API", () => {
 			const today = todayInAppTz();
 			expect(
 				await codeOf(
-					reporter.api.item.calendar({
+					reporter.api.view.calendar({
 						from: today,
 						to: addDays(today, -1),
 						scope: "all",
@@ -666,7 +685,7 @@ describe.skipIf(!hasTestDb)("item API", () => {
 			).toBe("BAD_REQUEST");
 			expect(
 				await codeOf(
-					reporter.api.item.calendar({
+					reporter.api.view.calendar({
 						from: today,
 						to: addDays(today, 90),
 						scope: "all",
@@ -705,14 +724,16 @@ describe.skipIf(!hasTestDb)("item API", () => {
 
 		it("todo 建单可以带计划开始", async () => {
 			const today = todayInAppTz();
-			const { code } = await reporter.api.item.create({
+			const {
+				item: { code },
+			} = await reporter.api.item.create({
 				type: "todo",
 				title: "排好的事",
 				priority: "P1",
 				startDate: addDays(today, 1),
 				dueDate: addDays(today, 3),
 			});
-			const { item } = await reporter.api.item.byCode({ code });
+			const { item } = await reporter.api.item.get({ code });
 			expect(item.startDate).toBe(addDays(today, 1));
 		});
 
@@ -733,7 +754,7 @@ describe.skipIf(!hasTestDb)("item API", () => {
 			await me.api.item.update({ code: late, startDate: addDays(today, 8) });
 
 			const window = async (from: string, to: string) =>
-				(await me.api.item.gantt({ from, to, scope: "assigned" })).map(
+				(await me.api.view.gantt({ from, to, scope: "assigned" })).map(
 					(i) => i.code,
 				);
 			// 窗口在今天之后：只靠建单日起算的那张也与它相交
@@ -755,13 +776,15 @@ describe.skipIf(!hasTestDb)("item API", () => {
 			const ca = await newTicket(reporter, me, { tags: [a] });
 			const cb = await newTicket(other, me, { tags: [b] });
 			const cc = await newTicket(reporter, me, { tags: [c] });
-			const { code: todo } = await me.api.item.create({
+			const {
+				item: { code: todo },
+			} = await me.api.item.create({
 				type: "todo",
 				title: "自己的",
 				priority: "P3",
 			});
 			const tagId = async (code: string) =>
-				(await me.api.item.byCode({ code })).item.tags[0]?.id ?? 0;
+				(await me.api.item.get({ code })).item.tags[0]?.id ?? 0;
 			const codes = async (input: ListInput) =>
 				(await me.api.item.list({ assigneeIds: [me.user.id], ...input })).items
 					.map((i) => i.code)
@@ -814,7 +837,7 @@ describe.skipIf(!hasTestDb)("item API", () => {
 	describe("评论与 @", () => {
 		it("被 @ 且看得见的人收「提到了你」，其余相关人收「新评论」", async () => {
 			const code = await newTicket(reporter, assignee);
-			await bystander.api.comment.add({
+			await bystander.api.comment.create({
 				code,
 				body: `${formatMention("接手人", other.user.id)} 帮忙看下`,
 			});
@@ -827,13 +850,15 @@ describe.skipIf(!hasTestDb)("item API", () => {
 		});
 
 		it("todo 里 @ 看不见它的人：不通知", async () => {
-			const { code } = await reporter.api.item.create({
+			const {
+				item: { code },
+			} = await reporter.api.item.create({
 				type: "todo",
 				title: "自己的事",
 				priority: "P3",
 			});
 			const before = (await notificationsOf(bystander.user.id)).length;
-			await reporter.api.comment.add({
+			await reporter.api.comment.create({
 				code,
 				body: `${formatMention("旁人", bystander.user.id)} 不该收到`,
 			});
@@ -842,17 +867,18 @@ describe.skipIf(!hasTestDb)("item API", () => {
 
 		it("编辑评论只通知新加的 @；只能改自己的", async () => {
 			const code = await newTicket(reporter, assignee);
-			// add 回这张单的最新评论列表，刚发的在最后
+			// create 回这张单的最新评论列表，刚发的在最后
 			const created = (
-				await reporter.api.comment.add({
+				await reporter.api.comment.create({
 					code,
 					body: `${formatMention("负责人", assignee.user.id)} 先看`,
 				})
 			).at(-1);
-			if (!created) throw new Error("add 应回含新评论的列表");
+			if (!created) throw new Error("create 应回含新评论的列表");
 			const { id } = created;
 			const assigneeBefore = (await notificationsOf(assignee.user.id)).length;
-			await reporter.api.comment.edit({
+			await reporter.api.comment.update({
+				code,
 				id,
 				body: `${formatMention("负责人", assignee.user.id)} ${formatMention("接手人", other.user.id)} 一起看`,
 			});
@@ -863,7 +889,7 @@ describe.skipIf(!hasTestDb)("item API", () => {
 				"mentioned",
 			);
 			expect(
-				await codeOf(assignee.api.comment.edit({ id, body: "篡改" })),
+				await codeOf(assignee.api.comment.update({ code, id, body: "篡改" })),
 			).toBe("FORBIDDEN");
 		});
 	});
@@ -873,13 +899,13 @@ describe.skipIf(!hasTestDb)("item API", () => {
 			const me = await actor({ name: "收件人" });
 			await newTicket(reporter, me);
 			await newTicket(reporter, me);
-			expect(await me.api.notification.unreadCount()).toBe(2);
+			expect((await me.api.notification.unreadCount()).count).toBe(2);
 			const [first] = (await me.api.notification.list({})).items;
 			if (!first) throw new Error("应有通知");
 			await me.api.notification.markRead({ ids: [first.id] });
-			expect(await me.api.notification.unreadCount()).toBe(1);
+			expect((await me.api.notification.unreadCount()).count).toBe(1);
 			await me.api.notification.markAllRead();
-			expect(await me.api.notification.unreadCount()).toBe(0);
+			expect((await me.api.notification.unreadCount()).count).toBe(0);
 		});
 	});
 
@@ -889,7 +915,7 @@ describe.skipIf(!hasTestDb)("item API", () => {
 			expect(
 				await codeOf(
 					bystander.api.admin.setRole({
-						userId: bystander.user.id,
+						id: bystander.user.id,
 						role: "admin",
 					}),
 				),
@@ -903,13 +929,13 @@ describe.skipIf(!hasTestDb)("item API", () => {
 			const solo = await actor({ name: "唯一管理员", role: "admin" });
 			expect(
 				await codeOf(
-					solo.api.admin.setRole({ userId: solo.user.id, role: "member" }),
+					solo.api.admin.setRole({ id: solo.user.id, role: "member" }),
 				),
 			).toBe("CONFLICT");
 
 			const next = await actor({ name: "新管理员" });
-			await solo.api.admin.setRole({ userId: next.user.id, role: "admin" });
-			await solo.api.admin.setRole({ userId: solo.user.id, role: "member" });
+			await solo.api.admin.setRole({ id: next.user.id, role: "admin" });
+			await solo.api.admin.setRole({ id: solo.user.id, role: "member" });
 			const actions = (await auditsFor("user", next.user.id)).map(
 				(a) => a.action,
 			);
@@ -921,8 +947,8 @@ describe.skipIf(!hasTestDb)("item API", () => {
 
 		it("审计查询按单号能查到条目与评论", async () => {
 			const code = await newTicket(reporter, assignee);
-			await bystander.api.comment.add({ code, body: "顶" });
-			const { rows } = await admin.api.admin.audit({ target: code });
+			await bystander.api.comment.create({ code, body: "顶" });
+			const { rows } = await admin.api.admin.auditLogs({ target: code });
 			expect(rows.map((r) => r.action).sort()).toEqual(
 				[AUDIT_ACTIONS.commentCreate, AUDIT_ACTIONS.itemCreate].sort(),
 			);

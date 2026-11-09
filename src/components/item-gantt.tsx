@@ -28,14 +28,14 @@ import { listHref } from "~/lib/item-filters";
 import { ganttQueryInput, ganttSearch } from "~/lib/schedule-params";
 import { useReplaceSearch } from "~/lib/use-replace-search";
 import { cn } from "~/lib/utils";
-import { type RouterOutputs, useTRPC } from "~/trpc/react";
+import { type ApiOutputs, orpc } from "~/orpc/client";
 
 import { priorityAccentOf } from "./badges";
 import { CHIP_TONES } from "./chip";
 import { EmptyState, PageHeader, Panel } from "./layout";
 import { PagerBar, SCHEDULE_SCOPE_OPTIONS, ScopeTabs } from "./view-toolbar";
 
-type GanttItem = RouterOutputs["item"]["gantt"][number];
+type GanttItem = ApiOutputs["view"]["gantt"][number];
 
 /** 翻页一次挪两周：一屏 6 周，留四周上下文 */
 const STEP_DAYS = 14;
@@ -92,7 +92,6 @@ export function ItemGantt({
 	initialStart: string;
 	initialScope: ScheduleScope;
 }) {
-	const trpc = useTRPC();
 	const qc = useQueryClient();
 	const today = todayInAppTz();
 	const [start, setStart] = useState(initialStart);
@@ -100,7 +99,7 @@ export function ItemGantt({
 
 	// 翻页时先留着上一屏，不闪骨架
 	const { data = [], isPending } = useQuery({
-		...trpc.item.gantt.queryOptions(ganttQueryInput(start, scope)),
+		...orpc.view.gantt.queryOptions({ input: ganttQueryInput(start, scope) }),
 		placeholderData: keepPreviousData,
 	});
 	useReplaceSearch(ganttSearch(start, scope, today));
@@ -108,9 +107,9 @@ export function ItemGantt({
 	useEffect(() => {
 		for (const s of [addDays(start, -STEP_DAYS), addDays(start, STEP_DAYS)])
 			void qc.prefetchQuery(
-				trpc.item.gantt.queryOptions(ganttQueryInput(s, scope)),
+				orpc.view.gantt.queryOptions({ input: ganttQueryInput(s, scope) }),
 			);
-	}, [start, scope, qc, trpc]);
+	}, [start, scope, qc]);
 
 	const days = Array.from({ length: GANTT_DAYS }, (_, i) => addDays(start, i));
 	const todayIdx = daysBetween(start, today);

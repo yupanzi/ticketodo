@@ -34,7 +34,7 @@ import {
 } from "~/components/ui/sheet";
 import { authClient } from "~/lib/auth-client";
 import { cn } from "~/lib/utils";
-import { useTRPC } from "~/trpc/react";
+import { orpc } from "~/orpc/client";
 
 import { useMe } from "./me-context";
 import { UserAvatar } from "./user-avatar";
@@ -50,12 +50,12 @@ type NavItem = {
 };
 
 function useNav() {
-	const trpc = useTRPC();
 	const me = useMe();
 	// 30s 轮询：站内通知不走推送
 	const { data: unread = 0 } = useQuery(
-		trpc.notification.unreadCount.queryOptions(undefined, {
+		orpc.notification.unreadCount.queryOptions({
 			refetchInterval: 30_000,
+			select: (r) => r.count,
 		}),
 	);
 	const work: NavItem[] = [

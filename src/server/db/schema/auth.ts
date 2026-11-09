@@ -8,6 +8,8 @@ import {
 	uniqueIndex,
 } from "drizzle-orm/pg-core";
 
+import { USER_ROLES } from "~/domain/policy";
+
 import { createTable } from "./table";
 
 /**
@@ -15,8 +17,7 @@ import { createTable } from "./table";
  * role 用 PG 枚举。升 better-auth 时重新生成一份对照，缺列要补（adapter 按这里的 JS 键名读写）。
  */
 
-export const USER_ROLES = ["member", "admin"] as const;
-export type UserRole = (typeof USER_ROLES)[number];
+export { USER_ROLES, type UserRole } from "~/domain/policy";
 
 export const userRole = pgEnum("ticketodo_user_role", USER_ROLES);
 
