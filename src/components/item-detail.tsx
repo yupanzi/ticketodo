@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	ArrowRightLeft,
+	Grid2x2,
 	MoreHorizontal,
 	Pencil,
 	RotateCcw,
@@ -42,6 +43,7 @@ import {
 import { Skeleton } from "~/components/ui/skeleton";
 import { todayInAppTz } from "~/domain/due";
 import { type ItemStatus, type ItemType, STATUS_LABEL } from "~/domain/item";
+import type { Priority } from "~/domain/priority";
 import { findEdge } from "~/domain/status";
 import { formatDateTime, formatDay } from "~/lib/format";
 import { type RouterOutputs, useTRPC } from "~/trpc/react";
@@ -65,6 +67,7 @@ import {
 	PropertyList,
 } from "./layout";
 import { Markdown } from "./markdown";
+import { PriorityPicker } from "./priority-picker";
 import { UserChip } from "./user-avatar";
 import { type PickedUser, UserPicker } from "./user-picker";
 
@@ -136,10 +139,13 @@ function StatusActions({ detail }: { detail: Detail }) {
 
 function EditDialog({
 	item,
+	canSetPriority,
 	open,
 	onOpenChange,
 }: {
 	item: Item;
+	/** 提单人能编辑但不能改优先级：不显示，也不提交 */
+	canSetPriority: boolean;
 	open: boolean;
 	onOpenChange: (o: boolean) => void;
 }) {
@@ -187,13 +193,19 @@ function EditDialog({
 							expectedUpdatedAt: item.updatedAt,
 							title: fields.title,
 							description: fields.description,
-							priority: fields.priority,
+							...(canSetPriority && fields.priority
+								? { priority: fields.priority }
+								: {}),
 							dueDate: fields.dueDate || null,
 							tags: fields.tags,
 						});
 					}}
 				>
-					<ItemFields onChange={setFields} value={fields} />
+					<ItemFields
+						onChange={setFields}
+						showPriority={canSetPriority}
+						value={fields}
+					/>
 					<DialogFooter>
 						<Button
 							onClick={() => onOpenChange(false)}
@@ -210,6 +222,57 @@ function EditDialog({
 						</Button>
 					</DialogFooter>
 				</form>
+			</DialogContent>
+		</Dialog>
+	);
+}
+
+/** 负责人给待定级的 ticket 定级：只有优先级这一项，比打开整个编辑表单快 */
+function TriageDialog({
+	item,
+	open,
+	onOpenChange,
+}: {
+	item: Item;
+	open: boolean;
+	onOpenChange: (o: boolean) => void;
+}) {
+	const trpc = useTRPC();
+	const cache = useItemCache();
+	const [picked, setPicked] = useState<Priority | null>(null);
+	const triage = useMutation(
+		trpc.item.update.mutationOptions({
+			onSuccess: (detail) => {
+				cache.apply(detail);
+				onOpenChange(false);
+				setPicked(null);
+			},
+			onError: (err) => toast.error(err.message),
+		}),
+	);
+	return (
+		<Dialog onOpenChange={onOpenChange} open={open}>
+			<DialogContent className="sm:max-w-xl">
+				<DialogHeader>
+					<DialogTitle>给 {item.code} 定级</DialogTitle>
+					<DialogDescription>
+						按「重要 × 紧急」判断；定级后提单人能在看板对应象限里看到它。
+					</DialogDescription>
+				</DialogHeader>
+				<PriorityPicker onChange={setPicked} value={picked} />
+				<DialogFooter>
+					<Button onClick={() => onOpenChange(false)} variant="ghost">
+						取消
+					</Button>
+					<Button
+						disabled={!picked || triage.isPending}
+						onClick={() => {
+							if (picked) triage.mutate({ code: item.code, priority: picked });
+						}}
+					>
+						确定
+					</Button>
+				</DialogFooter>
 			</DialogContent>
 		</Dialog>
 	);
@@ -321,7 +384,7 @@ function DeleteDialog({
 	);
 }
 
-type DialogKind = "edit" | "assign" | "convert" | "delete" | null;
+type DialogKind = "edit" | "triage" | "assign" | "convert" | "delete" | null;
 
 export function ItemDetail({ code }: { code: string }) {
 	const trpc = useTRPC();
@@ -391,6 +454,12 @@ export function ItemDetail({ code }: { code: string }) {
 				<StatusActions detail={data} />
 				{can.statuses.length > 0 && (can.edit || can.assign || can.convert) && (
 					<span aria-hidden className="mx-1 h-6 w-px bg-border" />
+				)}
+				{item.priority === null && can.setPriority && (
+					<Button onClick={() => setDialog("triage")} variant="outline">
+						<Grid2x2 />
+						定级
+					</Button>
 				)}
 				{can.edit && (
 					<Button onClick={() => setDialog("edit")} variant="outline">
@@ -494,9 +563,17 @@ export function ItemDetail({ code }: { code: string }) {
 
 			{can.edit && (
 				<EditDialog
+					canSetPriority={can.setPriority}
 					item={item}
 					onOpenChange={onOpenChange}
 					open={dialog === "edit"}
+				/>
+			)}
+			{can.setPriority && (
+				<TriageDialog
+					item={item}
+					onOpenChange={onOpenChange}
+					open={dialog === "triage"}
 				/>
 			)}
 			{(can.assign || can.convert) && (

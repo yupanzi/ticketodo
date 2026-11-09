@@ -17,7 +17,6 @@ describe.skipIf(!hasTestDb)("到期提醒", () => {
 			const { code } = await reporter.api.item.create({
 				type: "ticket",
 				title,
-				priority: "P1",
 				assigneeId: owner.user.id,
 				dueDate,
 			});

@@ -4,6 +4,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 
 import { addDays, todayInAppTz } from "~/domain/due";
 import { formatMention } from "~/domain/mention";
+import type { Priority } from "~/domain/priority";
 import { auditLogs, notifications } from "~/server/db/schema";
 import { AUDIT_ACTIONS } from "~/server/resources";
 import { auditsFor, hasTestDb, testDb, uniq } from "~/test/db";
@@ -29,14 +30,22 @@ async function notificationsOf(userId: string) {
 		.orderBy(notifications.id);
 }
 
-async function newTicket(by: Actor, assignee: Actor, extra = {}) {
+/** ticket 建单是待定级；给了 priority 就由负责人定级（优先级由接收方定） */
+async function newTicket(
+	by: Actor,
+	assignee: Actor,
+	{
+		priority,
+		...extra
+	}: { priority?: Priority; dueDate?: string; tags?: string[] } = {},
+) {
 	const { code } = await by.api.item.create({
 		type: "ticket",
 		title: "打印机坏了",
-		priority: "P0",
 		assigneeId: assignee.user.id,
 		...extra,
 	});
+	if (priority) await assignee.api.item.update({ code, priority });
 	return code;
 }
 
@@ -60,11 +69,7 @@ describe.skipIf(!hasTestDb)("item API", () => {
 			expect(
 				await codeOf(
 					// @ts-expect-error 故意漏掉 assigneeId
-					reporter.api.item.create({
-						type: "ticket",
-						title: "x",
-						priority: "P1",
-					}),
+					reporter.api.item.create({ type: "ticket", title: "x" }),
 				),
 			).toBe("BAD_REQUEST");
 		});
@@ -247,7 +252,7 @@ describe.skipIf(!hasTestDb)("item API", () => {
 				from: "打印机坏了",
 				to: "打印机又坏了",
 			});
-			expect(changes?.priority).toEqual({ from: "P0", to: "P1" });
+			expect(changes?.priority).toEqual({ from: null, to: "P1" });
 			expect(changes?.tags?.to).toEqual([
 				{ id: expect.any(Number), name: "硬件" },
 			]);
@@ -294,7 +299,112 @@ describe.skipIf(!hasTestDb)("item API", () => {
 		});
 	});
 
+	describe("定级（优先级由接收方定）", () => {
+		it("ticket 建单是待定级；建单审计里没有优先级", async () => {
+			const code = await newTicket(reporter, assignee);
+			const { item, permissions } = await reporter.api.item.byCode({ code });
+			expect(item.priority).toBeNull();
+			expect(permissions.setPriority).toBe(false);
+			const [created] = await reporter.api.item.timeline({ code });
+			expect(created?.changes?.priority).toBeUndefined();
+		});
+
+		it("负责人定级；提单人改优先级 FORBIDDEN 并记 failure 审计", async () => {
+			const code = await newTicket(reporter, assignee);
+			const triaged = await assignee.api.item.update({ code, priority: "P1" });
+			expect(triaged.item.priority).toBe("P1");
+			expect(
+				(await reporter.api.item.timeline({ code })).at(-1)?.changes?.priority,
+			).toEqual({ from: null, to: "P1" });
+
+			expect(
+				await codeOf(reporter.api.item.update({ code, priority: "P0" })),
+			).toBe("FORBIDDEN");
+			const { item } = await admin.api.item.byCode({ code });
+			expect(item.priority).toBe("P1");
+			const failures = (
+				await auditsFor("item", item.id, [AUDIT_ACTIONS.itemUpdate])
+			).filter((a) => a.status === "failure");
+			expect(failures).toMatchObject([
+				{ actorId: reporter.user.id, targetName: code },
+			]);
+		});
+
+		it("提单人编辑时带着没改的优先级：照常保存", async () => {
+			const code = await newTicket(reporter, assignee, { priority: "P2" });
+			const saved = await reporter.api.item.update({
+				code,
+				title: "补充一下",
+				priority: "P2",
+			});
+			expect(saved.item.title).toBe("补充一下");
+			expect(saved.item.priority).toBe("P2");
+		});
+
+		it("改派保留优先级，定级权跟着新负责人走", async () => {
+			const code = await newTicket(reporter, assignee, { priority: "P1" });
+			await assignee.api.item.assign({ code, assigneeId: other.user.id });
+			expect((await other.api.item.byCode({ code })).item.priority).toBe("P1");
+			expect(
+				await codeOf(assignee.api.item.update({ code, priority: "P3" })),
+			).toBe("FORBIDDEN");
+			const moved = await other.api.item.update({ code, priority: "P3" });
+			expect(moved.item.priority).toBe("P3");
+		});
+
+		it("列表能单独筛出待定级，也能与 P 级合着筛", async () => {
+			const me = await actor({ name: "筛待定级" });
+			const untriaged = await newTicket(reporter, me);
+			const p0 = await newTicket(reporter, me, { priority: "P0" });
+			await newTicket(reporter, me, { priority: "P3" });
+			const pick = async (priorities: ("untriaged" | Priority)[]) =>
+				(
+					await me.api.item.list({ assigneeIds: [me.user.id], priorities })
+				).items.map((i) => i.code);
+			expect(await pick(["untriaged"])).toEqual([untriaged]);
+			expect(await pick(["untriaged", "P0"])).toEqual([untriaged, p0]);
+		});
+
+		it("todo 建单必须选优先级", async () => {
+			expect(
+				await codeOf(
+					// @ts-expect-error 故意漏掉 priority
+					reporter.api.item.create({ type: "todo", title: "x" }),
+				),
+			).toBe("BAD_REQUEST");
+		});
+	});
+
 	describe("todo 转 ticket", () => {
+		it("转给别人：交由对方定级（变成待定级，审计记下）", async () => {
+			const { code } = await reporter.api.item.create({
+				type: "todo",
+				title: "交出去",
+				priority: "P0",
+			});
+			const converted = await reporter.api.item.convert({
+				code,
+				assigneeId: assignee.user.id,
+			});
+			expect(converted.item.priority).toBeNull();
+			expect(
+				(await assignee.api.item.timeline({ code })).at(-1)?.changes?.priority,
+			).toEqual({ from: "P0", to: null });
+		});
+
+		it("转给自己：优先级照旧", async () => {
+			const { code } = await reporter.api.item.create({
+				type: "todo",
+				title: "公开出来",
+				priority: "P2",
+			});
+			const converted = await reporter.api.item.convert({
+				code,
+				assigneeId: reporter.user.id,
+			});
+			expect(converted.item.priority).toBe("P2");
+		});
+
 		it("要指定负责人；此前的历史非管理员看不到", async () => {
 			const { code } = await reporter.api.item.create({
 				type: "todo",
@@ -400,7 +510,14 @@ describe.skipIf(!hasTestDb)("item API", () => {
 
 	describe("列表排序与翻页", () => {
 		let me: Actor;
-		const c = { p1Late: "", p0None: "", p1Soon: "", p0Today: "", p3Past: "" };
+		const c = {
+			p1Late: "",
+			p0None: "",
+			p1Soon: "",
+			p0Today: "",
+			p3Past: "",
+			untriaged: "",
+		};
 
 		/** 每页 2 条一路翻到底：验证 keyset 不漏不重 */
 		async function walk(input: ListInput = {}): Promise<string[]> {
@@ -422,22 +539,36 @@ describe.skipIf(!hasTestDb)("item API", () => {
 		beforeAll(async () => {
 			me = await actor({ name: "排序" });
 			const today = todayInAppTz();
-			const t = (priority: string, dueDate?: string) =>
+			const t = (priority?: Priority, dueDate?: string) =>
 				newTicket(reporter, me, { priority, dueDate });
 			c.p1Late = await t("P1", addDays(today, 5));
 			c.p0None = await t("P0");
 			c.p1Soon = await t("P1", addDays(today, 1));
 			c.p0Today = await t("P0", today);
 			c.p3Past = await t("P3", addDays(today, -3));
+			c.untriaged = await t();
 		});
 
-		it("默认：优先级 → 期望完成，没设日期的排在同级最后", async () => {
+		it("默认：优先级 → 期望完成，没设日期的排在同级最后；待定级在 P0 之前", async () => {
+			// 每页 2 条：第一页的游标正是待定级那行（priority 为 NULL），翻页不能漏
 			expect(await walk()).toEqual([
+				c.untriaged,
 				c.p0Today,
 				c.p0None,
 				c.p1Soon,
 				c.p1Late,
 				c.p3Past,
+			]);
+		});
+
+		it("优先级降序：待定级在最后", async () => {
+			expect(await walk({ sort: { by: "priority", dir: "desc" } })).toEqual([
+				c.p3Past,
+				c.p1Soon,
+				c.p1Late,
+				c.p0Today,
+				c.p0None,
+				c.untriaged,
 			]);
 		});
 
@@ -447,6 +578,7 @@ describe.skipIf(!hasTestDb)("item API", () => {
 				c.p0Today,
 				c.p1Soon,
 				c.p1Late,
+				c.untriaged,
 				c.p0None,
 			]);
 			expect(await walk({ sort: { by: "due", dir: "desc" } })).toEqual([
@@ -454,6 +586,7 @@ describe.skipIf(!hasTestDb)("item API", () => {
 				c.p1Soon,
 				c.p0Today,
 				c.p3Past,
+				c.untriaged,
 				c.p0None,
 			]);
 		});
@@ -465,11 +598,12 @@ describe.skipIf(!hasTestDb)("item API", () => {
 				c.p1Soon,
 				c.p0Today,
 				c.p3Past,
+				c.untriaged,
 			]);
 			await me.api.item.transition({ code: c.p1Late, to: "in_progress" });
 			const updated = await walk({ sort: { by: "updated", dir: "desc" } });
 			expect(updated[0]).toBe(c.p1Late);
-			expect(updated).toHaveLength(5);
+			expect(updated).toHaveLength(6);
 		});
 
 		it("游标是看不见的 todo：返回空页，不借翻页位置泄露它", async () => {

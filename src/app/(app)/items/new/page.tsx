@@ -7,7 +7,7 @@ import { PRIORITIES, type Priority } from "~/domain/priority";
 
 export const metadata: Metadata = { title: "新建" };
 
-/** `?priority=P1&type=todo` 预填（看板象限上的「+」带过来） */
+/** `?priority=P1&type=todo` 预填（看板象限上的「+」带过来）；优先级只对 todo 有意义 */
 export default async function NewItemPage({
 	searchParams,
 }: PageProps<"/items/new">) {

@@ -13,7 +13,8 @@ export function PriorityPicker({
 	onChange,
 	disabled,
 }: {
-	value: Priority;
+	/** null = 还没选（待定级的单第一次定级） */
+	value: Priority | null;
 	onChange: (p: Priority) => void;
 	disabled?: boolean;
 }) {

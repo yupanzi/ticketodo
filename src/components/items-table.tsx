@@ -37,7 +37,13 @@ import {
 	NATURAL_DIR,
 	type SortDir,
 } from "~/domain/item-list";
-import { PRIORITIES, PRIORITY_META } from "~/domain/priority";
+import {
+	PRIORITIES,
+	PRIORITY_META,
+	type PriorityFilter,
+	UNTRIAGED,
+	UNTRIAGED_META,
+} from "~/domain/priority";
 import { formatDateTime, formatRelative } from "~/lib/format";
 import {
 	DEFAULT_FILTERS,
@@ -75,14 +81,21 @@ const STATUS_OPTIONS = ITEM_STATUSES.map((s) => ({
 	label: STATUS_LABEL[s],
 	icon: <StatusDot status={s} />,
 }));
-const PRIORITY_OPTIONS = PRIORITIES.map((p) => ({
-	value: p,
-	label: p,
-	hint: PRIORITY_META[p].label,
-}));
+const PRIORITY_OPTIONS: {
+	value: PriorityFilter;
+	label: string;
+	hint: string;
+}[] = [
+	{ value: UNTRIAGED, label: UNTRIAGED_META.label, hint: UNTRIAGED_META.hint },
+	...PRIORITIES.map((p) => ({
+		value: p,
+		label: p,
+		hint: PRIORITY_META[p].label,
+	})),
+];
 
 const SORT_HINT: Record<ItemSortBy, Record<SortDir, string>> = {
-	priority: { asc: "P0 在前", desc: "P3 在前" },
+	priority: { asc: "待定级与 P0 在前", desc: "P3 在前" },
 	due: { asc: "近的在前", desc: "远的在前" },
 	created: { asc: "旧单在前", desc: "新单在前" },
 	updated: { asc: "久未更新的在前", desc: "刚更新的在前" },

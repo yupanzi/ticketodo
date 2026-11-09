@@ -13,14 +13,15 @@ import {
 	NATURAL_DIR,
 	SORT_DIRS,
 } from "~/domain/item-list";
-import { PRIORITIES, type Priority } from "~/domain/priority";
+import { PRIORITY_FILTERS, type PriorityFilter } from "~/domain/priority";
 
 /** 列表的筛选与排序：与地址栏双向同步，链接可以直接发给同事 */
 export interface ListFilterState {
 	q: string;
 	types: ItemType[];
 	statuses: ItemStatus[];
-	priorities: Priority[];
+	/** 含 `untriaged`（待定级） */
+	priorities: PriorityFilter[];
 	tagIds: number[];
 	assigneeIds: string[];
 	reporterIds: string[];
@@ -83,7 +84,7 @@ export function parseListFilters(p: Params): ListFilterState {
 			one("status") === undefined
 				? DEFAULT_STATUSES
 				: pick("status", ITEM_STATUSES),
-		priorities: pick("priority", PRIORITIES),
+		priorities: pick("priority", PRIORITY_FILTERS),
 		tagIds: list("tag")
 			.filter((x) => /^\d+$/.test(x))
 			.map(Number),

@@ -1,0 +1,2 @@
+ALTER TABLE "ticketodo_item" ALTER COLUMN "priority" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "ticketodo_item" ADD CONSTRAINT "ticketodo_item_todo_priority_check" CHECK ("ticketodo_item"."type" <> 'todo' OR "ticketodo_item"."priority" IS NOT NULL);

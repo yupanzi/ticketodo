@@ -42,13 +42,18 @@ import {
 	canDelete,
 	canEdit,
 	canRestore,
+	canSetPriority,
 	canTransition,
 	canView,
 	type ItemPermissions,
 	isAdmin,
 	itemPermissions,
 } from "~/domain/policy";
-import type { Priority } from "~/domain/priority";
+import {
+	type Priority,
+	type PriorityFilter,
+	UNTRIAGED,
+} from "~/domain/priority";
 import { findEdge, statusTimestamps } from "~/domain/status";
 import { auditInTx } from "~/server/audit/record";
 import type { Executor, Tx } from "~/server/db";
@@ -76,7 +81,8 @@ export interface ItemView {
 	type: ItemType;
 	title: string;
 	description: string;
-	priority: Priority;
+	/** null = 待定级 */
+	priority: Priority | null;
 	status: ItemStatus;
 	dueDate: string | null;
 	createdAt: Date;
@@ -166,7 +172,8 @@ const todaySql = sql`(now() AT TIME ZONE ${APP_TIMEZONE})::date`;
 export interface ListFilters {
 	types?: ItemType[];
 	statuses?: ItemStatus[];
-	priorities?: Priority[];
+	/** 含 `untriaged`（待定级） */
+	priorities?: PriorityFilter[];
 	assigneeIds?: string[];
 	reporterIds?: string[];
 	/** 命中任一标签 */
@@ -202,6 +209,12 @@ interface SortKey {
 }
 
 /**
+ * 优先级的排序值：待定级当作比 P0 还靠前（空串 < 'P0'），升序最先、降序最后。⚠️ 别直接用可空的
+ * 列：keyset 的 `=` / `>` 碰到 NULL 得 NULL，翻页会漏行。P 级的字典序与枚举序一致。
+ */
+const priorityRank = sql`coalesce(${items.priority}::text, '')`;
+
+/**
  * 排序键，末位总是 id：键值唯一，keyset 分页才不会在并列处漏行或重复。
  * 没设期望完成的不论升降都排最后：升序当作 infinity，降序当作 -infinity。
  */
@@ -213,14 +226,14 @@ function sortKeys({ by, dir }: ItemSort): SortKey[] {
 	switch (by) {
 		case "priority":
 			return [
-				{ expr: items.priority, dir },
+				{ expr: priorityRank, dir },
 				due("asc"),
 				{ expr: items.id, dir: "desc" },
 			];
 		case "due":
 			return [
 				due(dir),
-				{ expr: items.priority, dir: "asc" },
+				{ expr: priorityRank, dir: "asc" },
 				{ expr: items.id, dir: "desc" },
 			];
 		case "updated":
@@ -276,7 +289,15 @@ export async function listItems(
 	const conds: (SQL | undefined)[] = [visibleItemsWhere(ctx.actor)];
 	if (f.types?.length) conds.push(inArray(items.type, f.types));
 	if (f.statuses?.length) conds.push(inArray(items.status, f.statuses));
-	if (f.priorities?.length) conds.push(inArray(items.priority, f.priorities));
+	if (f.priorities?.length) {
+		const ps = f.priorities.filter((p): p is Priority => p !== UNTRIAGED);
+		conds.push(
+			or(
+				ps.length ? inArray(items.priority, ps) : undefined,
+				f.priorities.includes(UNTRIAGED) ? isNull(items.priority) : undefined,
+			),
+		);
+	}
 	if (f.assigneeIds?.length)
 		conds.push(inArray(items.assigneeId, f.assigneeIds));
 	if (f.reporterIds?.length)
@@ -494,7 +515,8 @@ export interface CreateItemInput {
 	type: ItemType;
 	title: string;
 	description: string;
-	priority: Priority;
+	/** todo 必填；ticket 忽略：建单是待定级，由负责人定（`canSetPriority`） */
+	priority?: Priority;
 	dueDate: string | null;
 	/** ticket 必填；todo 忽略（恒为本人） */
 	assigneeId?: string;
@@ -509,6 +531,9 @@ export async function createItem(
 		const isTicket = input.type === "ticket";
 		if (isTicket && !input.assigneeId)
 			throw new AppError("BAD_REQUEST", "ticket 必须指定负责人");
+		if (!isTicket && !input.priority)
+			throw new AppError("BAD_REQUEST", "todo 要选优先级");
+		const priority = isTicket ? null : (input.priority ?? null);
 		const assigneeId = isTicket ? (input.assigneeId as string) : ctx.actor.id;
 		const assigneeUser = await requireUser(tx, assigneeId);
 
@@ -520,7 +545,7 @@ export async function createItem(
 				type: input.type,
 				title: input.title,
 				description: input.description,
-				priority: input.priority,
+				priority,
 				dueDate: input.dueDate,
 				reporterId: ctx.actor.id,
 				assigneeId,
@@ -541,7 +566,9 @@ export async function createItem(
 				summary: `创建${isTicket ? " Ticket" : " Todo"}`,
 				changes: {
 					title: { from: null, to: row.title },
-					priority: { from: null, to: row.priority },
+					...(row.priority
+						? { priority: { from: null, to: row.priority } }
+						: {}),
 					...(isTicket
 						? {
 								assignee: {
@@ -633,6 +660,9 @@ export async function updateItem(
 			EDITABLE,
 		);
 		if (!hasChanges(changes)) return;
+		// 只在真改了优先级时判：编辑表单会把原值一起带上
+		if (changes.priority && !canSetPriority(ctx.actor, row))
+			throw forbidden("优先级由负责人定", target(row));
 
 		// 只改变了的列；只动了标签也要刷新 updatedAt（编辑冲突检测靠它）
 		const columns: Partial<typeof items.$inferInsert> = {
@@ -758,11 +788,18 @@ export async function convertItem(
 				target(row),
 			);
 		const to = await requireUser(tx, assigneeId);
+		// 交给别人就由对方重新定级（原优先级是提单人自己定的）；转给自己则照旧
+		const untriage = assigneeId !== row.reporterId && row.priority !== null;
 		await tx
 			.update(items)
 			// ⚠️ 取库的 now()（事务开始时间），与这笔转换审计的 at 相等：时间线按 at >= convertedAt
 			// 截断，用应用时钟会比审计晚几毫秒，把「转换」这条自己也截掉
-			.set({ type: "ticket", assigneeId, convertedAt: sql`now()` })
+			.set({
+				type: "ticket",
+				assigneeId,
+				convertedAt: sql`now()`,
+				...(untriage ? { priority: null } : {}),
+			})
 			.where(eq(items.id, row.id));
 		await auditInTx(tx, {
 			action: AUDIT_ACTIONS.itemConvert,
@@ -772,6 +809,7 @@ export async function convertItem(
 				changes: {
 					type: { from: "todo", to: "ticket" },
 					assignee: { from: null, to: { id: to.id, name: to.name } },
+					...(untriage ? { priority: { from: row.priority, to: null } } : {}),
 				},
 			},
 			...actorAudit(ctx),

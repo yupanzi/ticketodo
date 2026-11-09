@@ -38,10 +38,19 @@ export function canView(actor: Actor, item: ItemRef): boolean {
 	return item.type === "ticket" || item.reporterId === actor.id;
 }
 
-/** 改标题、描述、优先级、期望完成日期、标签 */
+/** 改标题、描述、期望完成日期、标签；优先级另由 `canSetPriority` 管 */
 export function canEdit(actor: Actor, item: ItemRef): boolean {
 	if (item.deletedAt) return false;
 	return isAdmin(actor) || rolesOf(actor, item).size > 0;
+}
+
+/**
+ * 定级 / 改优先级：接收方定，只有负责人（todo 即本人）与管理员。提单人能改别的字段，改不了优先级：
+ * 急不急由做的人判断，提单人的期望写在期望完成日期与描述里。
+ */
+export function canSetPriority(actor: Actor, item: ItemRef): boolean {
+	if (item.deletedAt) return false;
+	return isAdmin(actor) || item.assigneeId === actor.id;
 }
 
 /** 改派：ticket 才有；只有当前负责人或管理员；已关闭的不改派（要先重开） */
@@ -111,6 +120,7 @@ export function canDeleteComment(actor: Actor, comment: CommentRef): boolean {
 export function itemPermissions(actor: Actor, item: ItemRef) {
 	return {
 		edit: canEdit(actor, item),
+		setPriority: canSetPriority(actor, item),
 		assign: canAssign(actor, item),
 		statuses: allowedStatuses(actor, item),
 		delete: canDelete(actor, item),

@@ -13,7 +13,8 @@ import { TagInput } from "./tag-input";
 export interface ItemFieldValues {
 	title: string;
 	description: string;
-	priority: Priority;
+	/** null = 待定级 */
+	priority: Priority | null;
 	/** `YYYY-MM-DD` 或空串 */
 	dueDate: string;
 	tags: string[];
@@ -23,9 +24,12 @@ export interface ItemFieldValues {
 export function ItemFields({
 	value,
 	onChange,
+	showPriority,
 }: {
 	value: ItemFieldValues;
 	onChange: (v: ItemFieldValues) => void;
+	/** 优先级由接收方定（`canSetPriority`）：建 ticket 与提单人编辑时不出现 */
+	showPriority: boolean;
 }) {
 	const set = <K extends keyof ItemFieldValues>(k: K, v: ItemFieldValues[K]) =>
 		onChange({ ...value, [k]: v });
@@ -42,15 +46,17 @@ export function ItemFields({
 					value={value.title}
 				/>
 			</Field>
-			<Field
-				hint="重要：影响目标、不做会有后果；紧急：有时限、拖不得"
-				label="优先级"
-			>
-				<PriorityPicker
-					onChange={(p) => set("priority", p)}
-					value={value.priority}
-				/>
-			</Field>
+			{showPriority && (
+				<Field
+					hint="重要：影响目标、不做会有后果；紧急：有时限、拖不得"
+					label="优先级"
+				>
+					<PriorityPicker
+						onChange={(p) => set("priority", p)}
+						value={value.priority}
+					/>
+				</Field>
+			)}
 			<div className="grid gap-5 sm:grid-cols-2">
 				<Field htmlFor="item-due" label="期望完成日期">
 					<DatePicker

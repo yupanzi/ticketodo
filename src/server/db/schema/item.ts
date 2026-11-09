@@ -37,7 +37,8 @@ export const items = createTable(
 		title: varchar("title", { length: TITLE_MAX_LENGTH }).notNull(),
 		/** markdown */
 		description: text("description").notNull().default(""),
-		priority: itemPriority("priority").notNull(),
+		/** null = 待定级：ticket 由负责人定级；todo 建单即定（CHECK） */
+		priority: itemPriority("priority"),
 		status: itemStatus("status").notNull().default("open"),
 		/** 提单人；todo 的所有者 */
 		reporterId: text("reporter_id")
@@ -69,6 +70,10 @@ export const items = createTable(
 		check(
 			"ticketodo_item_todo_owner_check",
 			sql`${t.type} <> 'todo' OR ${t.assigneeId} = ${t.reporterId}`,
+		),
+		check(
+			"ticketodo_item_todo_priority_check",
+			sql`${t.type} <> 'todo' OR ${t.priority} IS NOT NULL`,
 		),
 		index("ticketodo_item_assignee_idx")
 			.on(t.assigneeId, t.status)

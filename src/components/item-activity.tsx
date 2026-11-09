@@ -17,6 +17,7 @@ import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
 import type { AuditChanges } from "~/domain/audit";
 import { type ItemStatus, STATUS_LABEL } from "~/domain/item";
+import { UNTRIAGED_META } from "~/domain/priority";
 import { formatDateTime, formatDay, formatRelative } from "~/lib/format";
 import { type RouterOutputs, useTRPC } from "~/trpc/react";
 
@@ -62,6 +63,13 @@ function describeChange(field: string, c: AuditChanges[string]): string {
 			.filter(Boolean)
 			.join("，");
 	}
+	if (field === "priority") {
+		const fmt = (p: unknown) =>
+			typeof p === "string" ? p : UNTRIAGED_META.label;
+		return c.from === null
+			? `定级为「${fmt(c.to)}」`
+			: `把${label}从「${fmt(c.from)}」改为「${fmt(c.to)}」`;
+	}
 	if (field === "dueDate") {
 		const fmt = (d: unknown) =>
 			typeof d === "string" ? formatDay(d) : "（无）";
@@ -90,7 +98,7 @@ function describe(e: Event): string {
 		case "item.assign":
 			return `把负责人从 ${nameOf(ch.assignee?.from)} 转给 ${nameOf(ch.assignee?.to)}`;
 		case "item.convert":
-			return `把 Todo 转为 Ticket，负责人 ${nameOf(ch.assignee?.to)}`;
+			return `把 Todo 转为 Ticket，负责人 ${nameOf(ch.assignee?.to)}${ch.priority ? "，交由对方定级" : ""}`;
 		case "item.delete":
 			return "删除了这张单";
 		case "item.restore":

@@ -17,6 +17,7 @@ import {
 	AlarmClock,
 	CalendarCheck,
 	CircleCheckBig,
+	CircleDashed,
 	GripVertical,
 	Inbox,
 	ListChecks,
@@ -31,8 +32,13 @@ import { Skeleton } from "~/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { dueState, todayInAppTz } from "~/domain/due";
 import { type BoardScope, DEFAULT_BOARD_SCOPE } from "~/domain/item-list";
-import { canEdit } from "~/domain/policy";
-import { PRIORITIES, PRIORITY_META, type Priority } from "~/domain/priority";
+import { canSetPriority } from "~/domain/policy";
+import {
+	PRIORITIES,
+	PRIORITY_META,
+	type Priority,
+	UNTRIAGED_META,
+} from "~/domain/priority";
 import { listHref } from "~/lib/item-filters";
 import { cn } from "~/lib/utils";
 import { type RouterOutputs, useTRPC } from "~/trpc/react";
@@ -169,7 +175,8 @@ function counterpart(item: BoardItem, me: Me) {
 
 function ItemCard({ item, today }: { item: BoardItem; today: string }) {
 	const me = useMe();
-	const draggable = canEdit(me, refOf(item));
+	// 拖动即改优先级：只有负责人与管理员（提单人能看不能拖）
+	const draggable = canSetPriority(me, refOf(item));
 	const { attributes, listeners, setNodeRef, transform, isDragging } =
 		useDraggable({ id: item.code, disabled: !draggable });
 	const overdue = dueState(item.dueDate, item.status, today) === "overdue";
@@ -186,7 +193,7 @@ function ItemCard({ item, today }: { item: BoardItem; today: string }) {
 		>
 			{draggable ? (
 				<button
-					aria-label={`拖动 ${item.code} 改优先级`}
+					aria-label={`拖动 ${item.code} ${item.priority ? "改优先级" : "定级"}`}
 					className="mt-0.5 h-fit cursor-grab rounded text-muted-foreground/40 hover:text-foreground group-hover:text-muted-foreground"
 					type="button"
 					{...attributes}
@@ -268,9 +275,10 @@ function Quadrant({
 					{items.length}
 				</span>
 				<Button asChild size="icon-sm" variant="ghost">
+					{/* 只有 todo 由自己定级；ticket 建单是待定级 */}
 					<Link
-						aria-label={`在 ${priority} 新建`}
-						href={`/items/new?priority=${priority}`}
+						aria-label={`在 ${priority} 新建 Todo`}
+						href={`/items/new?type=todo&priority=${priority}`}
 					>
 						<Plus />
 					</Link>
@@ -289,10 +297,45 @@ function Quadrant({
 	);
 }
 
+// ---------- 待定级 ----------
+
+/** 新建的 ticket 先落在这里；负责人拖进下面的象限即定级。没有待定级的单就不占地方 */
+function UntriagedLane({
+	items,
+	today,
+}: {
+	items: BoardItem[];
+	today: string;
+}) {
+	if (items.length === 0) return null;
+	return (
+		<section
+			aria-label={UNTRIAGED_META.label}
+			className="mb-4 overflow-hidden rounded-xl border border-dashed bg-card shadow-xs"
+		>
+			<header className="flex items-center gap-3 border-b border-dashed px-4 py-3">
+				<CircleDashed className="size-5 text-muted-foreground" />
+				<h2 className="font-semibold text-lg">{UNTRIAGED_META.label}</h2>
+				<span className="text-muted-foreground text-sm">
+					负责人把卡片拖进下面的象限即定级
+				</span>
+				<span className="ml-auto rounded-full bg-muted px-2 font-medium text-muted-foreground text-xs tabular-nums">
+					{items.length}
+				</span>
+			</header>
+			<ul className="grid gap-2.5 p-3 md:grid-cols-2 xl:grid-cols-3">
+				{items.map((i) => (
+					<ItemCard item={i} key={i.code} today={today} />
+				))}
+			</ul>
+		</section>
+	);
+}
+
 // dnd-kit 的读屏提示默认是英文
 const SCREEN_READER = {
 	draggable:
-		"按空格拿起卡片，用方向键移到别的象限，再按空格放下即改优先级；按 Esc 取消。",
+		"按空格拿起卡片，用方向键移到别的象限，再按空格放下即改优先级（待定级的即定级）；按 Esc 取消。",
 };
 
 const zone = (id: unknown) => {
@@ -367,7 +410,7 @@ export function QuadrantBoard() {
 						</TabsList>
 					</Tabs>
 				}
-				description="按「重要 × 紧急」安排手上的事；把卡片拖到别的象限即可调整优先级"
+				description="按「重要 × 紧急」安排手上的事；新 ticket 先进「待定级」，由负责人拖进象限"
 				title="四象限"
 			/>
 			<Summary />
@@ -386,6 +429,10 @@ export function QuadrantBoard() {
 					onDragEnd={onDragEnd}
 					sensors={sensors}
 				>
+					<UntriagedLane
+						items={(data ?? []).filter((i) => i.priority === null)}
+						today={today}
+					/>
 					<div className="grid gap-4 lg:grid-cols-2">
 						{PRIORITIES.map((p) => (
 							<Quadrant

@@ -12,7 +12,7 @@ import {
 	ITEM_SORTS,
 	SORT_DIRS,
 } from "~/domain/item-list";
-import { PRIORITIES } from "~/domain/priority";
+import { PRIORITIES, PRIORITY_FILTERS } from "~/domain/priority";
 import { TAG_NAME_MAX_LENGTH } from "~/domain/tag";
 import {
 	adminProcedure,
@@ -59,7 +59,6 @@ const detailAfter = async (
 const createFields = {
 	title,
 	description: description.default(""),
-	priority: z.enum(PRIORITIES),
 	dueDate: dueDate.default(null),
 	tags: tagNames.default([]),
 };
@@ -69,13 +68,17 @@ export const itemRouter = createTRPCRouter({
 		.meta({ audit: AUDIT_ACTIONS.itemCreate })
 		.input(
 			z.discriminatedUnion("type", [
-				// ticket 必须指定负责人：不存在未指派的单
+				// ticket 必须指定负责人：不存在未指派的单。不收优先级：建单是待定级，由负责人定
 				z.object({
 					type: z.literal("ticket"),
 					assigneeId: userId,
 					...createFields,
 				}),
-				z.object({ type: z.literal("todo"), ...createFields }),
+				z.object({
+					type: z.literal("todo"),
+					priority: z.enum(PRIORITIES),
+					...createFields,
+				}),
 			]),
 		)
 		.mutation(async ({ ctx, input }) => {
@@ -92,7 +95,7 @@ export const itemRouter = createTRPCRouter({
 			z.object({
 				types: z.array(z.enum(ITEM_TYPES)).optional(),
 				statuses: z.array(z.enum(ITEM_STATUSES)).optional(),
-				priorities: z.array(z.enum(PRIORITIES)).optional(),
+				priorities: z.array(z.enum(PRIORITY_FILTERS)).optional(),
 				assigneeIds: z.array(userId).max(50).optional(),
 				reporterIds: z.array(userId).max(50).optional(),
 				tagIds: z.array(z.number().int().positive()).max(50).optional(),

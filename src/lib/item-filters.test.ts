@@ -25,7 +25,7 @@ describe("列表筛选 ⇄ 地址栏", () => {
 			q: "打印机",
 			types: ["ticket"],
 			statuses: ["open", "closed"],
-			priorities: ["P0", "P1"],
+			priorities: ["untriaged", "P0", "P1"],
 			tagIds: [3, 7],
 			assigneeIds: ["u1", "u2"],
 			reporterIds: ["u3"],
@@ -33,6 +33,7 @@ describe("列表筛选 ⇄ 地址栏", () => {
 			sort: { by: "updated", dir: "asc" },
 		};
 		expect(roundTrip(f)).toEqual(f);
+		expect(toSearch(f)).toContain("priority=untriaged,P0,P1");
 		expect(roundTrip({ ...f, due: "next7" }).due).toBe("next7");
 		expect(roundTrip({ ...f, due: { to: "2026-11-30" } }).due).toEqual({
 			to: "2026-11-30",

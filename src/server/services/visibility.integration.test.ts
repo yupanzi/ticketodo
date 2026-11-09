@@ -20,7 +20,6 @@ describe.skipIf(!hasTestDb)("visibleItemsWhere 与 canView 一致", () => {
 				await owner.api.item.create({
 					type: "ticket",
 					title: "t",
-					priority: "P0",
 					assigneeId: other.user.id,
 				})
 			).code,

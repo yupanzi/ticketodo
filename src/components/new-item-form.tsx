@@ -118,14 +118,18 @@ export function NewItemForm({
 					const common = {
 						title: fields.title,
 						description: fields.description,
-						priority: fields.priority,
 						dueDate: fields.dueDate || null,
 						tags: fields.tags,
 					};
+					// ticket 不带优先级：建单是待定级，由负责人定
 					create.mutate(
 						type === "ticket" && assignee
 							? { type, assigneeId: assignee.id, ...common }
-							: { type: "todo", ...common },
+							: {
+									type: "todo",
+									priority: fields.priority ?? initialPriority,
+									...common,
+								},
 					);
 				}}
 			>
@@ -135,7 +139,7 @@ export function NewItemForm({
 				{type === "ticket" && (
 					<Field
 						className="max-w-sm"
-						hint="只能指派给登录过 ticketodo 的人"
+						hint="只能指派给登录过 ticketodo 的人；优先级由负责人定"
 						htmlFor="item-assignee"
 						label="负责人"
 						required
@@ -147,7 +151,11 @@ export function NewItemForm({
 						/>
 					</Field>
 				)}
-				<ItemFields onChange={setFields} value={fields} />
+				<ItemFields
+					onChange={setFields}
+					showPriority={type === "todo"}
+					value={fields}
+				/>
 				<div className="flex gap-2 border-t pt-5">
 					<Button
 						disabled={

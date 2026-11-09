@@ -1,8 +1,12 @@
-import { CalendarClock } from "lucide-react";
+import { CalendarClock, CircleDashed } from "lucide-react";
 
 import { dueLabel, dueState } from "~/domain/due";
 import { type ItemStatus, STATUS_LABEL } from "~/domain/item";
-import { PRIORITY_META, type Priority } from "~/domain/priority";
+import {
+	PRIORITY_META,
+	type Priority,
+	UNTRIAGED_META,
+} from "~/domain/priority";
 import type { TagColor } from "~/domain/tag";
 import { formatDay } from "~/lib/format";
 import { cn } from "~/lib/utils";
@@ -23,9 +27,17 @@ export function PriorityBadge({
 	priority,
 	withLabel = false,
 }: {
-	priority: Priority;
+	/** null = 待定级：描边加虚线圈，不占用任何语义色 */
+	priority: Priority | null;
 	withLabel?: boolean;
 }) {
+	if (priority === null)
+		return (
+			<Chip title={UNTRIAGED_META.hint} tone="outline">
+				<CircleDashed />
+				{UNTRIAGED_META.label}
+			</Chip>
+		);
 	const meta = PRIORITY_META[priority];
 	return (
 		<Chip title={`${meta.label} · ${meta.hint}`} tone={PRIORITY_TONE[priority]}>

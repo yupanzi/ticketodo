@@ -77,6 +77,8 @@ deploy/              values.example.yaml：通用 chart dockerhelm 的部署 val
 - ⚠️ **`services/visibility.ts` 与 `canView` 同一口径**，改一处改两处；`visibility.integration.test.ts`
   对照两者。
 - **改派只有当前负责人与管理员**（提单人不行），todo 没有改派，已关闭的不改派。
+- **优先级由接收方定**（`canSetPriority`）：负责人与管理员；提单人能编辑别的字段，改不了优先级。
+  服务端只在优先级真变了时判（编辑表单会带上原值）。改派保留优先级；todo 转给别人变回待定级。
 - **ticket 必须有负责人**：库里 `assignee_id NOT NULL`，todo 由 CHECK 约束负责人 = 本人。
 
 ### 条目与单号
@@ -91,6 +93,8 @@ deploy/              values.example.yaml：通用 chart dockerhelm 的部署 val
 - **列表分页是 keyset**（`listItems`）：排序键末位必须是 id；游标只传 id，排序值由服务端按 text 现查。
   ⚠️ 别把排序值塞进游标：`updated_at` 是微秒，经 JS Date 截成毫秒会漏行。游标行看不见就返回空页。
 - date 列一律 `mode: "string"`：转成 Date 会被时区挪一天。
+- **priority 为 null = 待定级**，只有 ticket 会有（todo 由 CHECK 保证）。排序用 `priorityRank`
+  （coalesce 成文本）：⚠️ 别直接排可空列，keyset 的 `=` / `>` 遇 NULL 得 NULL，翻页漏行。
 
 ### 审计（`server/audit/`、`drizzle/0001_*`）
 
@@ -209,7 +213,7 @@ mv .env /tmp/x && pnpm build; mv /tmp/x .env   # 构建期零 env
   （NOT_FOUND 不泄露、改派权限、并发取号、时间线白名单、审计只追加）· 登录 hook 与种子管理员
   `server/auth/hooks.integration.test.ts` · 到期提醒 `services/due-remind.integration.test.ts`
   · 脱敏 `server/log.test.ts` · sslmode `server/db/index.test.ts`。
-- **端到端**：本地用 mock OIDC 或真实 authentik 走「登录 → 建 ticket（选负责人）→ 对方收到通知 →
+- **端到端**：本地用 mock OIDC 或真实 authentik 走「登录 → 建 ticket（选负责人）→ 对方收到通知 → 负责人定级 →
   开始处理 → 评论 @ → 标记已解决 → 提单人确认关闭 → 拖象限 → 审计查到 diff」；日志里 grep 不到
   `code=` 与 token。
 - **镜像**：无入口 exit 64；`migrate.cjs` 迁移成功；`server.js` 缺 env exit 1、齐了 `/api/healthz`
