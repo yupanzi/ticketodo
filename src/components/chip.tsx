@@ -7,23 +7,23 @@ import { cn } from "~/lib/utils";
  * 色调有语义：solid 用于「重要」（P0 / P1），soft 用于提示，muted 用于已结束 / 不重要。
  * 主色保持黑白：只有告警（红、琥珀）与「已解决」（绿）带颜色。
  */
+/** 色调表：Chip 与甘特条（`badges.tsx` 的 `priorityAccentOf`）共用，颜色的语义只定义这一处 */
+export const CHIP_TONES = {
+	ink: "bg-foreground text-background",
+	red: "bg-red-600 text-white",
+	"red-soft": "bg-red-50 text-red-700 ring-1 ring-red-200 ring-inset",
+	"amber-soft": "bg-amber-50 text-amber-800 ring-1 ring-amber-200 ring-inset",
+	"green-soft":
+		"bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 ring-inset",
+	neutral: "bg-muted text-foreground/80",
+	outline: "bg-card text-foreground/80 ring-1 ring-border ring-inset",
+	muted: "text-muted-foreground ring-1 ring-border ring-inset",
+};
+
 export const chipVariants = cva(
 	"inline-flex h-6 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 font-medium text-xs [&>svg]:size-3.5",
 	{
-		variants: {
-			tone: {
-				ink: "bg-foreground text-background",
-				red: "bg-red-600 text-white",
-				"red-soft": "bg-red-50 text-red-700 ring-1 ring-red-200 ring-inset",
-				"amber-soft":
-					"bg-amber-50 text-amber-800 ring-1 ring-amber-200 ring-inset",
-				"green-soft":
-					"bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 ring-inset",
-				neutral: "bg-muted text-foreground/80",
-				outline: "bg-card text-foreground/80 ring-1 ring-border ring-inset",
-				muted: "text-muted-foreground ring-1 ring-border ring-inset",
-			},
-		},
+		variants: { tone: CHIP_TONES },
 		defaultVariants: { tone: "neutral" },
 	},
 );

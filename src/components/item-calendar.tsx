@@ -5,49 +5,28 @@ import {
 	useQuery,
 	useQueryClient,
 } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { CalendarDays } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import { Button } from "~/components/ui/button";
-import { Tabs, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { dueState, todayInAppTz } from "~/domain/due";
-import {
-	DEFAULT_SCHEDULE_SCOPE,
-	monthGrid,
-	monthGridRange,
-	type ScheduleScope,
-	shiftMonth,
-} from "~/domain/schedule";
+import { monthGrid, type ScheduleScope, shiftMonth } from "~/domain/schedule";
 import { formatDayWeek } from "~/lib/format";
 import { listHref } from "~/lib/item-filters";
+import { calendarQueryInput, calendarSearch } from "~/lib/schedule-params";
+import { useReplaceSearch } from "~/lib/use-replace-search";
 import { cn } from "~/lib/utils";
 import { type RouterOutputs, useTRPC } from "~/trpc/react";
 
 import { priorityAccentOf } from "./badges";
-import { PageHeader, Panel } from "./layout";
+import { EmptyState, PageHeader, Panel } from "./layout";
+import { PagerBar, SCHEDULE_SCOPE_OPTIONS, ScopeTabs } from "./view-toolbar";
 
 type CalendarItem = RouterOutputs["item"]["calendar"][number];
-
-export const SCHEDULE_SCOPE_TABS: { value: ScheduleScope; label: string }[] = [
-	{ value: "assigned", label: "我负责的" },
-	{ value: "reported", label: "我提的" },
-	{ value: "all", label: "全部" },
-];
 
 const WEEKDAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 /** 一格最多列几条，多了给「+N」去列表看那一天 */
 const PER_DAY = 3;
-
-/** 视角与月份写进地址栏（默认值不写），链接可以直接发给同事 */
-function calendarSearch(month: string, scope: ScheduleScope, today: string) {
-	const q = new URLSearchParams();
-	if (month !== today.slice(0, 7)) q.set("month", month);
-	if (scope !== DEFAULT_SCHEDULE_SCOPE) q.set("scope", scope);
-	const s = q.toString();
-	return s ? `?${s}` : "";
-}
 
 function CalendarEntry({ item, today }: { item: CalendarItem; today: string }) {
 	const overdue =
@@ -78,87 +57,57 @@ export function ItemCalendar({
 }) {
 	const trpc = useTRPC();
 	const qc = useQueryClient();
-	const pathname = usePathname();
 	const today = todayInAppTz();
+	const thisMonth = today.slice(0, 7);
 	const [month, setMonth] = useState(initialMonth);
 	const [scope, setScope] = useState(initialScope);
 
 	// 翻月时先留着上个月的格子，不闪骨架
 	const { data = [] } = useQuery({
-		...trpc.item.calendar.queryOptions({ ...monthGridRange(month), scope }),
+		...trpc.item.calendar.queryOptions(calendarQueryInput(month, scope)),
 		placeholderData: keepPreviousData,
 	});
-
+	useReplaceSearch(calendarSearch(month, scope, today));
+	// 前后各一个月先取着：翻月不用等
 	useEffect(() => {
-		// 原生 replaceState：理由见 ItemsTable
-		window.history.replaceState(
-			null,
-			"",
-			`${pathname}${calendarSearch(month, scope, today)}`,
-		);
-		// 前后各一个月先取着：翻月不用等
 		for (const m of [shiftMonth(month, -1), shiftMonth(month, 1)])
 			void qc.prefetchQuery(
-				trpc.item.calendar.queryOptions({ ...monthGridRange(m), scope }),
+				trpc.item.calendar.queryOptions(calendarQueryInput(m, scope)),
 			);
-	}, [month, scope, today, pathname, qc, trpc]);
+	}, [month, scope, qc, trpc]);
 
 	const byDay = new Map<string, CalendarItem[]>();
 	for (const i of data) {
 		if (!i.dueDate) continue;
 		byDay.set(i.dueDate, [...(byDay.get(i.dueDate) ?? []), i]);
 	}
-	const weeks = monthGrid(month);
+	const days = monthGrid(month).flat();
+	const daysWithItems = days.filter((d) => d.startsWith(month) && byDay.has(d));
 	const [y, m] = month.split("-").map(Number);
 
 	return (
 		<>
 			<PageHeader
 				actions={
-					<Tabs
-						onValueChange={(v) => setScope(v as ScheduleScope)}
+					<ScopeTabs
+						onChange={setScope}
+						options={SCHEDULE_SCOPE_OPTIONS}
 						value={scope}
-					>
-						<TabsList>
-							{SCHEDULE_SCOPE_TABS.map((s) => (
-								<TabsTrigger key={s.value} value={s.value}>
-									{s.label}
-								</TabsTrigger>
-							))}
-						</TabsList>
-					</Tabs>
+					/>
 				}
 				description="按期望完成日期排；已关闭的不显示"
 				title="日历"
 			/>
-			<div className="mb-4 flex items-center gap-2">
-				<Button
-					aria-label="上个月"
-					onClick={() => setMonth(shiftMonth(month, -1))}
-					size="icon"
-					variant="outline"
-				>
-					<ChevronLeft />
-				</Button>
-				<Button
-					disabled={month === today.slice(0, 7)}
-					onClick={() => setMonth(today.slice(0, 7))}
-					variant="outline"
-				>
-					本月
-				</Button>
-				<Button
-					aria-label="下个月"
-					onClick={() => setMonth(shiftMonth(month, 1))}
-					size="icon"
-					variant="outline"
-				>
-					<ChevronRight />
-				</Button>
-				<h2 className="ml-2 font-semibold text-xl tabular-nums">
-					{y} 年 {m} 月
-				</h2>
-			</div>
+			<PagerBar
+				atReset={month === thisMonth}
+				heading={`${y} 年 ${m} 月`}
+				nextLabel="下个月"
+				onNext={() => setMonth(shiftMonth(month, 1))}
+				onPrev={() => setMonth(shiftMonth(month, -1))}
+				onReset={() => setMonth(thisMonth)}
+				prevLabel="上个月"
+				resetLabel="本月"
+			/>
 
 			{/* 宽屏：月格 */}
 			<Panel className="hidden md:block" flush>
@@ -170,9 +119,8 @@ export function ItemCalendar({
 					))}
 				</div>
 				<div className="grid grid-cols-7">
-					{weeks.flat().map((day, i) => {
+					{days.map((day, i) => {
 						const items = byDay.get(day) ?? [];
-						const inMonth = day.startsWith(month);
 						return (
 							<div
 								className={cn(
@@ -185,7 +133,7 @@ export function ItemCalendar({
 								<span
 									className={cn(
 										"inline-flex size-6 items-center justify-center rounded-full text-xs tabular-nums",
-										!inMonth && "text-muted-foreground/60",
+										!day.startsWith(month) && "text-muted-foreground/60",
 										day === today &&
 											"bg-foreground font-semibold text-background",
 									)}
@@ -211,32 +159,27 @@ export function ItemCalendar({
 
 			{/* 窄屏：七列放不下，按天列出有单子的日子 */}
 			<Panel className="md:hidden" flush>
-				{weeks
-					.flat()
-					.filter((day) => day.startsWith(month) && byDay.has(day))
-					.map((day) => (
+				{daysWithItems.length === 0 ? (
+					<EmptyState icon={<CalendarDays />} title="这个月没有到期的单子" />
+				) : (
+					daysWithItems.map((day) => (
 						<section className="border-b px-4 py-3 last:border-b-0" key={day}>
 							<h3
 								className={cn(
 									"mb-2 font-medium text-sm",
-									day === today && "text-foreground",
-									day !== today && "text-muted-foreground",
+									day === today ? "text-foreground" : "text-muted-foreground",
 								)}
 							>
 								{formatDayWeek(day)}
 								{day === today && "（今天）"}
 							</h3>
 							<div className="flex flex-col gap-1">
-								{(byDay.get(day) ?? []).map((item) => (
+								{byDay.get(day)?.map((item) => (
 									<CalendarEntry item={item} key={item.code} today={today} />
 								))}
 							</div>
 						</section>
-					))}
-				{!weeks.flat().some((d) => d.startsWith(month) && byDay.has(d)) && (
-					<p className="px-4 py-8 text-center text-muted-foreground text-sm">
-						这个月没有到期的单子
-					</p>
+					))
 				)}
 			</Panel>
 		</>

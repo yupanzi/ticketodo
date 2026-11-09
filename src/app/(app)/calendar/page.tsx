@@ -3,11 +3,10 @@ import type { Metadata } from "next";
 import { ItemCalendar } from "~/components/item-calendar";
 import { todayInAppTz } from "~/domain/due";
 import {
-	DEFAULT_SCHEDULE_SCOPE,
-	monthGridRange,
+	calendarQueryInput,
 	parseMonth,
-	SCHEDULE_SCOPES,
-} from "~/domain/schedule";
+	parseScheduleScope,
+} from "~/lib/schedule-params";
 import { getQueryClient, HydrateClient, trpc } from "~/trpc/server";
 
 export const metadata: Metadata = { title: "日历" };
@@ -17,15 +16,10 @@ export default async function CalendarPage({
 	searchParams,
 }: PageProps<"/calendar">) {
 	const params = await searchParams;
-	const month = parseMonth(
-		typeof params.month === "string" ? params.month : undefined,
-		todayInAppTz(),
-	);
-	const scope =
-		SCHEDULE_SCOPES.find((s) => s === params.scope) ?? DEFAULT_SCHEDULE_SCOPE;
-	// 与 ItemCalendar 的查询同一个 key：月格首尾 + 视角
+	const month = parseMonth(params.month, todayInAppTz());
+	const scope = parseScheduleScope(params.scope);
 	await getQueryClient().prefetchQuery(
-		trpc.item.calendar.queryOptions({ ...monthGridRange(month), scope }),
+		trpc.item.calendar.queryOptions(calendarQueryInput(month, scope)),
 	);
 	return (
 		<HydrateClient>

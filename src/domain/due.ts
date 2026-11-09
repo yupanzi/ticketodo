@@ -19,8 +19,14 @@ export function todayInAppTz(now: Date = new Date()): string {
 	return DAY_FORMAT.format(now);
 }
 
-/** 某个时刻是北京的哪一天（如建单日） */
-export const dayInAppTz = (at: Date): string => DAY_FORMAT.format(at);
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** 合法的 `YYYY-MM-DD`：Date 会把 2-30 悄悄顺延成 3 月 2 日、13 月则是 Invalid Date，都不算 */
+export function isDay(raw: string): boolean {
+	if (!DAY.test(raw)) return false;
+	const d = new Date(`${raw}T00:00:00Z`);
+	return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === raw;
+}
 
 /** 起止都含当天（`YYYY-MM-DD`）；两端都空 = 不限 */
 export interface DayRange {

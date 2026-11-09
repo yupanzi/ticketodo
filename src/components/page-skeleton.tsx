@@ -1,5 +1,7 @@
 import { Skeleton } from "~/components/ui/skeleton";
 
+import { PageHeader } from "./layout";
+
 /**
  * 各路由 `loading.tsx` 的骨架：点链接立刻有反馈，Next 也才会预取动态页面（没有 loading 边界的
  * 动态路由不预取）。⚠️ 网格要与真实页面一致，内容到了才不跳。
@@ -12,21 +14,23 @@ export function PageSkeleton({
 	return (
 		<div aria-busy className="flex flex-col">
 			<span className="sr-only">加载中</span>
-			<header className="mb-6 flex flex-wrap items-end justify-between gap-3">
-				<div className="flex flex-col gap-2">
-					{variant === "detail" && <Skeleton className="h-4 w-40" />}
-					<Skeleton className="h-8 w-56" />
-					{variant === "detail" && (
-						<div className="mt-1 flex gap-2">
-							<Skeleton className="h-6 w-16" />
-							<Skeleton className="h-6 w-24" />
-						</div>
-					)}
-				</div>
-				{(variant === "board" || variant === "calendar") && (
-					<Skeleton className="h-9 w-72" />
+			{/* 用真的 PageHeader：间距与对齐跟着它走，不另抄一份 */}
+			<PageHeader
+				actions={
+					(variant === "board" || variant === "calendar") && (
+						<Skeleton className="h-9 w-72" />
+					)
+				}
+				eyebrow={variant === "detail" && <Skeleton className="h-4 w-40" />}
+				title={<Skeleton className="h-8 w-56" />}
+			>
+				{variant === "detail" && (
+					<>
+						<Skeleton className="h-6 w-16" />
+						<Skeleton className="h-6 w-24" />
+					</>
 				)}
-			</header>
+			</PageHeader>
 			{variant === "board" && (
 				<>
 					<div className="mb-6 grid grid-cols-2 gap-4 xl:grid-cols-4">

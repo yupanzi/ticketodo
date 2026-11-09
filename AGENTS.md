@@ -37,11 +37,12 @@ src/
 ├── app/             sign-in · (app)/{看板, items, items/new, items/[code], calendar, gantt,
 │                    notifications, admin/*}
 │                    · api/{auth, trpc, healthz}
-├── lib/             format（日期显示，一律北京时间）· item-filters（列表筛选 ⇄ 地址栏）· auth-client
+├── lib/             format（日期显示，一律北京时间）· item-filters（列表筛选 ⇄ 地址栏）
+│                    · schedule-params（日历、甘特 ⇄ 地址栏）· use-replace-search · auth-client
 ├── components/      layout（PageHeader · Panel · EmptyState · Field · PropertyList）· chip · badges
 │                    · date-picker（唯一的日期输入）· list-filters（分面筛选）· app-shell（侧栏）
 │                    · item-cache（改单后的缓存规则）· page-skeleton（各路由 loading.tsx 的骨架）
-│                    · item-calendar · item-gantt
+│                    · item-calendar · item-gantt · view-toolbar（视角切换、翻页）
 │                    · 各页组件；ui/ 是 shadcn 生成后调过尺寸的（Biome 不查）
 ├── proxy.ts         定 x-request-id；页面无会话 cookie 去登录页
 ├── instrumentation.ts  启动校验 · onRequestError 走 pino
@@ -148,11 +149,13 @@ deploy/              values.example.yaml：通用 chart dockerhelm 的部署 val
 - **每个路由都有 `loading.tsx`**（`page-skeleton.tsx`）：没有它点链接毫无反馈，Next 也不预取动态页面。
   新页面一并加，骨架网格与真实页面一致。
 - **页面数据在 RSC 里预取**（`HydrateClient`），别留给客户端挂载后再查（多一个串行往返）。预取的 key
-  必须与客户端一致：列表入参走 `listQueryInput`，看板视角走 `DEFAULT_BOARD_SCOPE`。
+  必须与客户端一致：列表走 `item-filters`，日历、甘特走 `schedule-params`，看板视角走
+  `DEFAULT_BOARD_SCOPE`。详情页把单号转大写（小写就重定向），byCode 的 key 只有一种写法。
 - **改单的 mutation 回最新数据**（item 回详情、评论回列表），客户端用 `useItemCache` 换上；状态变更乐观
   更新（按钮集合用 `itemPermissions` 现算）。⚠️ 后台刷新别 await：按钮会多转一个往返。
-- **筛选、翻月写地址栏用 `window.history.replaceState`**：⚠️ 别用 `router.replace`，服务端会把整页连同
-  预取再渲染一遍，每改一次白查一次库。
+- **筛选、翻页写地址栏用 `useReplaceSearch`**（原生 replaceState）：⚠️ 别用 `router.replace`，服务端会把
+  整页连同预取再渲染一遍，每改一次白查一次库。
+- 日历、甘特的查询只回画图用的几列（不联人、不带标签与描述）：一屏几百条、还预取前后两屏。
 
 ### 构建期与运行时
 

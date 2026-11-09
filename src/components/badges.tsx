@@ -11,7 +11,7 @@ import type { TagColor } from "~/domain/tag";
 import { formatDay } from "~/lib/format";
 import { cn } from "~/lib/utils";
 
-import { Chip, Dot } from "./chip";
+import { CHIP_TONES, Chip, Dot } from "./chip";
 
 /**
  * 优先级配色有含义：重要 = 实心（P0 / P1），紧急 = 暖色（P0 红、P2 琥珀），P3 两者都不 = 浅灰。
@@ -47,32 +47,25 @@ export function PriorityBadge({
 	);
 }
 
-/**
- * 日历条目的左边线（edge）、甘特条（fill）：与 PriorityBadge 同一套语义，待定级用虚线。
- * ⚠️ class 要写全：Tailwind 只认源码里的字面量。
- */
-export const PRIORITY_ACCENT = {
-	P0: { edge: "border-l-red-500", fill: "bg-red-600 text-white" },
-	P1: { edge: "border-l-foreground", fill: "bg-foreground text-background" },
-	P2: {
-		edge: "border-l-amber-400",
-		fill: "bg-amber-100 text-amber-900 ring-1 ring-amber-300 ring-inset",
-	},
-	P3: {
-		edge: "border-l-border",
-		fill: "bg-muted text-foreground/80 ring-1 ring-border ring-inset",
-	},
-	untriaged: {
-		edge: "border-dashed border-l-muted-foreground/50",
-		fill: "border border-dashed border-muted-foreground/60 bg-card text-foreground/80",
-	},
-} as const satisfies Record<
-	Priority | "untriaged",
-	{ edge: string; fill: string }
->;
+/** 日历条目的左边线：与 PriorityBadge 同一套语义，待定级用虚线。⚠️ class 要写全：Tailwind 只认字面量 */
+const PRIORITY_EDGE = {
+	P0: "border-l-red-500",
+	P1: "border-l-foreground",
+	P2: "border-l-amber-400",
+	P3: "border-l-border",
+} as const satisfies Record<Priority, string>;
 
+/** 日历左边线（edge）与甘特条（fill）。fill 直接取 PriorityBadge 用的 Chip 色调；待定级没有对应色调，用虚线框 */
 export function priorityAccentOf(priority: Priority | null) {
-	return PRIORITY_ACCENT[priority ?? "untriaged"];
+	return priority === null
+		? {
+				edge: "border-dashed border-l-muted-foreground/50",
+				fill: "border border-dashed border-muted-foreground/60 bg-card text-foreground/80",
+			}
+		: {
+				edge: PRIORITY_EDGE[priority],
+				fill: CHIP_TONES[PRIORITY_TONE[priority]],
+			};
 }
 
 /** 象限标题等处的优先级色块（与 PriorityBadge 同色） */

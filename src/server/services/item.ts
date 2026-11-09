@@ -378,10 +378,20 @@ export async function mySummary(ctx: ServiceContext): Promise<MySummary> {
 const BOARD_LIMIT = 500;
 
 /**
- * 四象限看板（UI 按 priority 分格）。
- * - mine：需要我处理的——我负责的进行中条目，加上我提的、等我确认的已解决 ticket
- * - reported：我提的未关闭 ticket
- * - all：看得见的全部未关闭条目
+ * 按人分的视角，都不看已关闭的（看板、日历、甘特共用）：
+ * - assigned：我负责的 · reported：我提的 ticket · all：看得见的全部
+ */
+function peopleScopeWhere(me: string, scope: ScheduleScope): SQL | undefined {
+	const open = not(eq(items.status, "closed"));
+	if (scope === "assigned") return and(open, eq(items.assigneeId, me));
+	if (scope === "reported")
+		return and(open, eq(items.reporterId, me), eq(items.type, "ticket"));
+	return open;
+}
+
+/**
+ * 四象限看板（UI 按 priority 分格）。reported / all 见 `peopleScopeWhere`；
+ * mine 是「需要我处理的」：我负责的进行中条目，加上我提的、等我确认的已解决 ticket。
  */
 export async function boardItems(
 	ctx: ServiceContext,
@@ -401,13 +411,7 @@ export async function boardItems(
 						eq(items.status, "resolved"),
 					),
 				)
-			: scope === "reported"
-				? and(
-						eq(items.reporterId, me),
-						eq(items.type, "ticket"),
-						not(eq(items.status, "closed")),
-					)
-				: not(eq(items.status, "closed"));
+			: peopleScopeWhere(me, scope);
 	const rows = await selectItems(ctx.db)
 		.where(and(visibleItemsWhere(ctx.actor), scopeCond))
 		// 与列表默认排序同一套键：象限内优先级相同，即期望完成近的在前、没设的在后
@@ -419,53 +423,64 @@ export async function boardItems(
 /** 日历、甘特一次最多回多少条：一屏画不下更多，再多就该去列表筛了 */
 const SCHEDULE_LIMIT = 300;
 
-/** 日历与甘特的视角（`ScheduleScope`）；都不看已关闭的，与看板一致 */
-function scheduleScopeWhere(me: string, scope: ScheduleScope): SQL | undefined {
-	const open = not(eq(items.status, "closed"));
-	if (scope === "assigned") return and(open, eq(items.assigneeId, me));
-	if (scope === "reported")
-		return and(open, eq(items.reporterId, me), eq(items.type, "ticket"));
-	return open;
-}
+/**
+ * 日历、甘特只画这几样：不联人、不带标签，更不带描述。一屏几百条、还要预取前后两屏，
+ * 整条记录会让每次翻页多下几百 KB。
+ */
+const scheduleColumns = {
+	code: items.code,
+	title: items.title,
+	priority: items.priority,
+	status: items.status,
+	dueDate: items.dueDate,
+	startDate: items.startDate,
+};
+type ScheduleInput = { from: string; to: string; scope: ScheduleScope };
+
+const scheduleWhere = (ctx: ServiceContext, scope: ScheduleScope) =>
+	and(visibleItemsWhere(ctx.actor), peopleScopeWhere(ctx.actor.id, scope));
 
 /** 日历：期望完成落在 [from, to] 的单（起止含当天） */
-export async function calendarItems(
-	ctx: ServiceContext,
-	input: { from: string; to: string; scope: ScheduleScope },
-): Promise<ItemView[]> {
-	const rows = await selectItems(ctx.db)
-		.where(
-			and(
-				visibleItemsWhere(ctx.actor),
-				scheduleScopeWhere(ctx.actor.id, input.scope),
-				gte(items.dueDate, input.from),
-				lte(items.dueDate, input.to),
-			),
-		)
-		// 同一天里与列表默认排序一致：待定级与 P0 在前
-		.orderBy(asc(items.dueDate), ...orderOf(sortKeys(DEFAULT_SORT)))
-		.limit(SCHEDULE_LIMIT);
-	return withTags(ctx.db, rows);
+export async function calendarItems(ctx: ServiceContext, input: ScheduleInput) {
+	return (
+		ctx.db
+			.select(scheduleColumns)
+			.from(items)
+			.where(
+				and(
+					scheduleWhere(ctx, input.scope),
+					gte(items.dueDate, input.from),
+					lte(items.dueDate, input.to),
+				),
+			)
+			// 同一天里与列表默认排序一致：待定级与 P0 在前
+			.orderBy(asc(items.dueDate), ...orderOf(sortKeys(DEFAULT_SORT)))
+			.limit(SCHEDULE_LIMIT)
+	);
 }
 
-/** 甘特条的起点：计划开始，没排就从建单那天（北京日期）算 */
-const spanStartSql = sql`coalesce(${items.startDate}, (${items.createdAt} AT TIME ZONE ${APP_TIMEZONE})::date)`;
+/**
+ * 甘特条的起点：计划开始，没排就从建单那天（北京日期）算。原样回给前端画（`ganttSpan`），
+ * 筛窗口与画条用的是同一个表达式。
+ */
+const spanStartSql = sql<string>`coalesce(${items.startDate}, (${items.createdAt} AT TIME ZONE ${APP_TIMEZONE})::date)`;
 
 /**
  * 甘特：有期望完成、且 [起点, 期望完成] 与 [from, to] 有交集的单。起点晚于期望完成（排不过来）时按
- * 两者之间算，图上标红（见 `ganttSpan`）。
+ * 两者之间算，图上标红。
  */
-export async function ganttItems(
-	ctx: ServiceContext,
-	input: { from: string; to: string; scope: ScheduleScope },
-): Promise<ItemView[]> {
+export async function ganttItems(ctx: ServiceContext, input: ScheduleInput) {
 	const lo = sql`least(${spanStartSql}, ${items.dueDate})`;
 	const hi = sql`greatest(${spanStartSql}, ${items.dueDate})`;
-	const rows = await selectItems(ctx.db)
+	return ctx.db
+		.select({
+			...scheduleColumns,
+			spanStart: sql<string>`(${spanStartSql})::text`,
+		})
+		.from(items)
 		.where(
 			and(
-				visibleItemsWhere(ctx.actor),
-				scheduleScopeWhere(ctx.actor.id, input.scope),
+				scheduleWhere(ctx, input.scope),
 				isNotNull(items.dueDate),
 				sql`${lo} <= ${input.to}`,
 				sql`${hi} >= ${input.from}`,
@@ -473,7 +488,6 @@ export async function ganttItems(
 		)
 		.orderBy(asc(lo), asc(items.dueDate), desc(items.id))
 		.limit(SCHEDULE_LIMIT);
-	return withTags(ctx.db, rows);
 }
 
 /** 管理员回收站 */

@@ -9,15 +9,8 @@ export const SCHEDULE_SCOPES = ["assigned", "reported", "all"] as const;
 export type ScheduleScope = (typeof SCHEDULE_SCOPES)[number];
 export const DEFAULT_SCHEDULE_SCOPE: ScheduleScope = "assigned";
 
-/** 一次最多查多少天：一屏月历 6 周、甘特 8 周，留点余量 */
+/** 一次最多查多少天：一屏月历最多 6 周、甘特 6 周，留点余量 */
 export const SCHEDULE_MAX_DAYS = 62;
-
-const MONTH = /^(\d{4})-(0[1-9]|1[0-2])$/;
-
-/** 地址栏的 `?month=`：不合法就回落到今天所在的月 */
-export function parseMonth(raw: string | undefined, today: string): string {
-	return raw && MONTH.test(raw) ? raw : today.slice(0, 7);
-}
 
 export function shiftMonth(month: string, n: number): string {
 	const d = new Date(`${month}-01T00:00:00Z`);
@@ -31,25 +24,24 @@ export function startOfWeek(day: string): string {
 }
 
 /**
- * 月历要画的格子：从 1 号所在周的周一，到月末所在周的周日，按周切开（5 或 6 周）。
- * 前后补的是相邻月的日子，照样显示当天到期的单。
+ * 月历的格子首尾：从 1 号所在周的周一，到月末所在周的周日（5 或 6 周）。
+ * 前后补的是相邻月的日子，照样显示当天到期的单；查询也按这个区间取。
  */
-export function monthGrid(month: string): string[][] {
+export function monthGridRange(month: string): { from: string; to: string } {
 	const first = `${month}-01`;
-	const last = addDays(startOfWeek(endOfMonth(first)), 6);
-	const weeks: string[][] = [];
-	for (let day = startOfWeek(first); day <= last; day = addDays(day, 7))
-		weeks.push(Array.from({ length: 7 }, (_, i) => addDays(day, i)));
-	return weeks;
+	return {
+		from: startOfWeek(first),
+		to: addDays(startOfWeek(endOfMonth(first)), 6),
+	};
 }
 
-/** 月历要查的区间：与 `monthGrid` 的首尾一致 */
-export function monthGridRange(month: string): { from: string; to: string } {
-	const weeks = monthGrid(month);
-	return {
-		from: weeks[0]?.[0] ?? `${month}-01`,
-		to: weeks.at(-1)?.[6] ?? endOfMonth(`${month}-01`),
-	};
+/** 月历要画的格子，按周切开 */
+export function monthGrid(month: string): string[][] {
+	const { from, to } = monthGridRange(month);
+	const weeks: string[][] = [];
+	for (let day = from; day <= to; day = addDays(day, 7))
+		weeks.push(Array.from({ length: 7 }, (_, i) => addDays(day, i)));
+	return weeks;
 }
 
 // ---------- 甘特 ----------
@@ -57,23 +49,7 @@ export function monthGridRange(month: string): { from: string; to: string } {
 /** 一屏看 6 周 */
 export const GANTT_DAYS = 42;
 
-const DAY = /^\d{4}-\d{2}-\d{2}$/;
-
-/** 合法的 `YYYY-MM-DD`：Date 会把 2-30 悄悄顺延成 3 月 2 日、13 月则是 Invalid Date，都不算 */
-function isDay(raw: string): boolean {
-	if (!DAY.test(raw)) return false;
-	const d = new Date(`${raw}T00:00:00Z`);
-	return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === raw;
-}
-
-/** 地址栏的 `?from=`：对齐到周一；没给或不合法就从上周一开始（回看一周，主要往后看） */
-export function parseGanttStart(
-	raw: string | undefined,
-	today: string,
-): string {
-	return raw && isDay(raw) ? startOfWeek(raw) : defaultGanttStart(today);
-}
-
+/** 默认窗口从上周一开始：回看一周，主要往后看 */
 export function defaultGanttStart(today: string): string {
 	return addDays(startOfWeek(today), -7);
 }
@@ -83,16 +59,17 @@ export function ganttRange(start: string): { from: string; to: string } {
 }
 
 /**
- * 甘特条的起止（含两端）：起点是计划开始，没排就用建单日。起点晚于期望完成说明排不过来：
- * 两头对调画出来，并标 `late`。
+ * 甘特条的起止（含两端）。`spanStart` 由服务端算（计划开始，没排就是建单日，见 `ganttItems`），
+ * 与它筛窗口的口径是同一个表达式。起点晚于期望完成：两头对调画出来；若是排的计划开始晚了，
+ * 标 `late`（排不过来），补录的单建单日晚于期望完成不算。
  */
 export function ganttSpan(item: {
+	spanStart: string;
 	startDate: string | null;
 	dueDate: string;
-	createdDay: string;
 }): { start: string; end: string; late: boolean } {
-	const start = item.startDate ?? item.createdDay;
-	return start <= item.dueDate
-		? { start, end: item.dueDate, late: false }
-		: { start: item.dueDate, end: start, late: item.startDate !== null };
+	const { spanStart: start, dueDate: due } = item;
+	return start <= due
+		? { start, end: due, late: false }
+		: { start: due, end: start, late: item.startDate !== null };
 }

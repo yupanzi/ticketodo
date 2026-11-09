@@ -1,5 +1,5 @@
 import { z } from "zod";
-
+import { daysBetween } from "~/domain/due";
 import {
 	DESCRIPTION_MAX_LENGTH,
 	ITEM_STATUSES,
@@ -54,12 +54,10 @@ const scheduleRange = z
 		to: z.iso.date(),
 		scope: z.enum(SCHEDULE_SCOPES),
 	})
-	.refine(
-		(r) =>
-			r.from <= r.to &&
-			(Date.parse(r.to) - Date.parse(r.from)) / 86_400_000 < SCHEDULE_MAX_DAYS,
-		`起止要有序，最多 ${SCHEDULE_MAX_DAYS} 天`,
-	);
+	.refine((r) => {
+		const n = daysBetween(r.from, r.to);
+		return n >= 0 && n < SCHEDULE_MAX_DAYS;
+	}, `起止要有序，最多 ${SCHEDULE_MAX_DAYS} 天`);
 
 /**
  * 改单的 mutation 都回最新详情（与 byCode 同形）：客户端拿它当场更新详情页，不用改完再查一趟。
@@ -100,10 +98,8 @@ export const itemRouter = createTRPCRouter({
 				}),
 			]),
 		)
-		.mutation(async ({ ctx, input }) => {
-			const { code } = await createItem(ctx.svc, input);
-			return { code, ...(await getItem(ctx.svc, code)) };
-		}),
+		// 只回单号：前端接着跳详情页，那边服务端渲染时自己取（不用 detailAfter）
+		.mutation(({ ctx, input }) => createItem(ctx.svc, input)),
 
 	byCode: protectedProcedure
 		.input(z.object({ code }))

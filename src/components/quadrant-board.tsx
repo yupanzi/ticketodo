@@ -29,7 +29,6 @@ import { toast } from "sonner";
 
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
-import { Tabs, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { dueState, todayInAppTz } from "~/domain/due";
 import { type BoardScope, DEFAULT_BOARD_SCOPE } from "~/domain/item-list";
 import { canPlan } from "~/domain/policy";
@@ -54,6 +53,7 @@ import { useItemCache } from "./item-cache";
 import { EmptyState, PageHeader } from "./layout";
 import { type Me, useMe } from "./me-context";
 import { UserAvatar } from "./user-avatar";
+import { ScopeTabs } from "./view-toolbar";
 
 type BoardItem = RouterOutputs["item"]["board"][number];
 const SCOPES: { value: BoardScope; label: string }[] = [
@@ -240,6 +240,15 @@ function ItemCard({ item, today }: { item: BoardItem; today: string }) {
 
 // ---------- 象限 ----------
 
+/** 象限与「待定级」一栏标题右侧的条数 */
+function LaneCount({ n }: { n: number }) {
+	return (
+		<span className="ml-auto rounded-full bg-muted px-2 font-medium text-muted-foreground text-xs tabular-nums">
+			{n}
+		</span>
+	);
+}
+
 function Quadrant({
 	priority,
 	items,
@@ -272,9 +281,7 @@ function Quadrant({
 				<PriorityBadge priority={priority} />
 				<h2 className="font-semibold text-lg">{meta.label}</h2>
 				<span className="text-muted-foreground text-sm">{meta.hint}</span>
-				<span className="ml-auto rounded-full bg-muted px-2 font-medium text-muted-foreground text-xs tabular-nums">
-					{items.length}
-				</span>
+				<LaneCount n={items.length} />
 				<Button asChild size="icon-sm" variant="ghost">
 					{/* 只有 todo 由自己定级；ticket 建单是待定级 */}
 					<Link
@@ -320,9 +327,7 @@ function UntriagedLane({
 				<span className="text-muted-foreground text-sm">
 					负责人把卡片拖进下面的象限即定级
 				</span>
-				<span className="ml-auto rounded-full bg-muted px-2 font-medium text-muted-foreground text-xs tabular-nums">
-					{items.length}
-				</span>
+				<LaneCount n={items.length} />
 			</header>
 			<ul className="grid gap-2.5 p-3 md:grid-cols-2 xl:grid-cols-3">
 				{items.map((i) => (
@@ -400,15 +405,7 @@ export function QuadrantBoard() {
 		<>
 			<PageHeader
 				actions={
-					<Tabs onValueChange={(v) => setScope(v as BoardScope)} value={scope}>
-						<TabsList>
-							{SCOPES.map((s) => (
-								<TabsTrigger key={s.value} value={s.value}>
-									{s.label}
-								</TabsTrigger>
-							))}
-						</TabsList>
-					</Tabs>
+					<ScopeTabs onChange={setScope} options={SCOPES} value={scope} />
 				}
 				description="按「重要 × 紧急」安排手上的事；新 ticket 先进「待定级」，由负责人拖进象限"
 				title="四象限"

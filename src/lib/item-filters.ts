@@ -1,3 +1,4 @@
+import { isDay } from "~/domain/due";
 import {
 	ITEM_STATUSES,
 	ITEM_TYPES,
@@ -44,7 +45,6 @@ export const DEFAULT_FILTERS: ListFilterState = {
 	sort: DEFAULT_SORT,
 };
 
-const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const USER_ID = /^[\w-]{1,64}$/;
 
 /** 到期：快捷项原样；范围写成 `起..止`，缺一端留空 */
@@ -57,8 +57,8 @@ function parseDue(raw: string | undefined): DueFilter | null {
 	if (preset) return preset;
 	const [from, to] = (raw ?? "").split("..");
 	const range = {
-		...(from && DAY.test(from) ? { from } : {}),
-		...(to && DAY.test(to) ? { to } : {}),
+		...(from && isDay(from) ? { from } : {}),
+		...(to && isDay(to) ? { to } : {}),
 	};
 	return range.from || range.to ? range : null;
 }

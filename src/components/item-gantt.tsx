@@ -5,23 +5,18 @@ import {
 	useQuery,
 	useQueryClient,
 } from "@tanstack/react-query";
-import { ChartGantt, ChevronLeft, ChevronRight } from "lucide-react";
+import { ChartGantt } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import { Button } from "~/components/ui/button";
-import { Tabs, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import {
 	addDays,
-	dayInAppTz,
 	daysBetween,
 	dueState,
 	todayInAppTz,
 	weekdayOf,
 } from "~/domain/due";
 import {
-	DEFAULT_SCHEDULE_SCOPE,
 	defaultGanttStart,
 	GANTT_DAYS,
 	ganttRange,
@@ -30,12 +25,15 @@ import {
 } from "~/domain/schedule";
 import { formatDay, formatDayRange } from "~/lib/format";
 import { listHref } from "~/lib/item-filters";
+import { ganttQueryInput, ganttSearch } from "~/lib/schedule-params";
+import { useReplaceSearch } from "~/lib/use-replace-search";
 import { cn } from "~/lib/utils";
 import { type RouterOutputs, useTRPC } from "~/trpc/react";
 
 import { priorityAccentOf } from "./badges";
-import { SCHEDULE_SCOPE_TABS } from "./item-calendar";
+import { CHIP_TONES } from "./chip";
 import { EmptyState, PageHeader, Panel } from "./layout";
+import { PagerBar, SCHEDULE_SCOPE_OPTIONS, ScopeTabs } from "./view-toolbar";
 
 type GanttItem = RouterOutputs["item"]["gantt"][number];
 
@@ -43,14 +41,6 @@ type GanttItem = RouterOutputs["item"]["gantt"][number];
 const STEP_DAYS = 14;
 /** 第 1 列是标题，日子从第 2 列起 */
 const DAY_COL = 2;
-
-function ganttSearch(start: string, scope: ScheduleScope, today: string) {
-	const q = new URLSearchParams();
-	if (start !== defaultGanttStart(today)) q.set("from", start);
-	if (scope !== DEFAULT_SCHEDULE_SCOPE) q.set("scope", scope);
-	const s = q.toString();
-	return s ? `?${s}` : "";
-}
 
 function Bar({
 	item,
@@ -64,11 +54,7 @@ function Bar({
 	row: number;
 }) {
 	if (!item.dueDate) return null;
-	const span = ganttSpan({
-		startDate: item.startDate,
-		dueDate: item.dueDate,
-		createdDay: dayInAppTz(item.createdAt),
-	});
+	const span = ganttSpan({ ...item, dueDate: item.dueDate });
 	const from = daysBetween(start, span.start);
 	const to = daysBetween(start, span.end);
 	const first = Math.max(from, 0);
@@ -80,7 +66,7 @@ function Bar({
 			className={cn(
 				"z-10 mx-px flex h-6 items-center self-center truncate rounded-md px-2 text-xs",
 				span.late
-					? "bg-red-50 text-red-700 ring-1 ring-red-300 ring-inset"
+					? CHIP_TONES["red-soft"]
 					: priorityAccentOf(item.priority).fill,
 				overdue && "outline-2 outline-red-500 outline-offset-1",
 				item.status === "resolved" && "opacity-50",
@@ -108,29 +94,23 @@ export function ItemGantt({
 }) {
 	const trpc = useTRPC();
 	const qc = useQueryClient();
-	const pathname = usePathname();
 	const today = todayInAppTz();
 	const [start, setStart] = useState(initialStart);
 	const [scope, setScope] = useState(initialScope);
 
 	// 翻页时先留着上一屏，不闪骨架
 	const { data = [], isPending } = useQuery({
-		...trpc.item.gantt.queryOptions({ ...ganttRange(start), scope }),
+		...trpc.item.gantt.queryOptions(ganttQueryInput(start, scope)),
 		placeholderData: keepPreviousData,
 	});
-
+	useReplaceSearch(ganttSearch(start, scope, today));
+	// 前后各两周先取着：翻页不用等
 	useEffect(() => {
-		// 原生 replaceState：理由见 ItemsTable
-		window.history.replaceState(
-			null,
-			"",
-			`${pathname}${ganttSearch(start, scope, today)}`,
-		);
 		for (const s of [addDays(start, -STEP_DAYS), addDays(start, STEP_DAYS)])
 			void qc.prefetchQuery(
-				trpc.item.gantt.queryOptions({ ...ganttRange(s), scope }),
+				trpc.item.gantt.queryOptions(ganttQueryInput(s, scope)),
 			);
-	}, [start, scope, today, pathname, qc, trpc]);
+	}, [start, scope, qc, trpc]);
 
 	const days = Array.from({ length: GANTT_DAYS }, (_, i) => addDays(start, i));
 	const todayIdx = daysBetween(start, today);
@@ -141,18 +121,11 @@ export function ItemGantt({
 		<>
 			<PageHeader
 				actions={
-					<Tabs
-						onValueChange={(v) => setScope(v as ScheduleScope)}
+					<ScopeTabs
+						onChange={setScope}
+						options={SCHEDULE_SCOPE_OPTIONS}
 						value={scope}
-					>
-						<TabsList>
-							{SCHEDULE_SCOPE_TABS.map((s) => (
-								<TabsTrigger key={s.value} value={s.value}>
-									{s.label}
-								</TabsTrigger>
-							))}
-						</TabsList>
-					</Tabs>
+					/>
 				}
 				description={
 					<>
@@ -168,34 +141,16 @@ export function ItemGantt({
 				}
 				title="甘特图"
 			/>
-			<div className="mb-4 flex items-center gap-2">
-				<Button
-					aria-label="往前两周"
-					onClick={() => setStart(addDays(start, -STEP_DAYS))}
-					size="icon"
-					variant="outline"
-				>
-					<ChevronLeft />
-				</Button>
-				<Button
-					disabled={start === defaultGanttStart(today)}
-					onClick={() => setStart(defaultGanttStart(today))}
-					variant="outline"
-				>
-					回到本周
-				</Button>
-				<Button
-					aria-label="往后两周"
-					onClick={() => setStart(addDays(start, STEP_DAYS))}
-					size="icon"
-					variant="outline"
-				>
-					<ChevronRight />
-				</Button>
-				<h2 className="ml-2 font-semibold text-lg tabular-nums sm:text-xl">
-					{formatDayRange(ganttRange(start))}
-				</h2>
-			</div>
+			<PagerBar
+				atReset={start === defaultGanttStart(today)}
+				heading={formatDayRange(ganttRange(start))}
+				nextLabel="往后两周"
+				onNext={() => setStart(addDays(start, STEP_DAYS))}
+				onPrev={() => setStart(addDays(start, -STEP_DAYS))}
+				onReset={() => setStart(defaultGanttStart(today))}
+				prevLabel="往前两周"
+				resetLabel="回到本周"
+			/>
 
 			<Panel bodyClassName="overflow-x-auto" flush>
 				<div

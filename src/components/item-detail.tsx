@@ -194,13 +194,9 @@ function EditDialog({
 							expectedUpdatedAt: item.updatedAt,
 							title: fields.title,
 							description: fields.description,
-							// 提单人看不到也不提交这两项（canPlan）
-							...(canPlan
-								? {
-										...(fields.priority ? { priority: fields.priority } : {}),
-										startDate: fields.startDate || null,
-									}
-								: {}),
+							// 提单人看不到这两项、值就是原值：服务端只在真变了时判 canPlan
+							priority: fields.priority ?? undefined,
+							startDate: fields.startDate || null,
 							dueDate: fields.dueDate || null,
 							tags: fields.tags,
 						});

@@ -13,9 +13,13 @@ import { makeQueryClient } from "./query-client";
 /** 同一次渲染共享一个 QueryClient：预取的数据随 HydrateClient 交给客户端 */
 export const getQueryClient = cache(makeQueryClient);
 
+/** 同一次渲染的几个预取共用一个 context：否则每个预取各查一次会话 */
+const rscContext = cache(async () =>
+	contextFromHeaders(await headers(), { method: "GET", path: "/rsc" }),
+);
+
 export const trpc = createTRPCOptionsProxy({
-	ctx: async () =>
-		contextFromHeaders(await headers(), { method: "GET", path: "/rsc" }),
+	ctx: rscContext,
 	router: appRouter,
 	queryClient: getQueryClient,
 });
