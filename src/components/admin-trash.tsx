@@ -35,7 +35,7 @@ export function AdminTrash() {
 		<>
 			<PageHeader
 				description="被删除的单子只有管理员看得到，恢复后回到原来的状态。"
-				title="回收站"
+				title="已删单子"
 			/>
 			<Panel flush>
 				<Table>
@@ -83,7 +83,7 @@ export function AdminTrash() {
 					</TableBody>
 				</Table>
 				{!isLoading && data.length === 0 && (
-					<EmptyState icon={<Trash2 />} title="回收站是空的" />
+					<EmptyState icon={<Trash2 />} title="没有已删的单子" />
 				)}
 			</Panel>
 		</>

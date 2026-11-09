@@ -62,7 +62,7 @@ export function ItemFields({
 			<div className="grid gap-5 sm:grid-cols-2">
 				{planning && (
 					<Field
-						hint="甘特图的起点；不排就从建单日算"
+						hint="甘特视图的起点；不排就从建单日算"
 						htmlFor="item-start"
 						label="计划开始日期"
 					>

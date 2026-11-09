@@ -141,7 +141,7 @@ export function AdminTags() {
 		<>
 			<PageHeader
 				description="谁都能在建单时新建标签；改名、合并、删除只有管理员。"
-				title="标签"
+				title="标签管理"
 			/>
 			<Panel flush>
 				<Table>

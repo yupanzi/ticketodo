@@ -59,7 +59,7 @@ function useNav() {
 		}),
 	);
 	const work: NavItem[] = [
-		{ href: "/", match: (p) => p === "/", label: "四象限", icon: LayoutGrid },
+		{ href: "/", match: (p) => p === "/", label: "象限看板", icon: LayoutGrid },
 		{
 			href: "/items",
 			// 详情页算列表下；新建页有自己的按钮，不高亮任何项
@@ -68,16 +68,16 @@ function useNav() {
 			label: "全部单子",
 			icon: ListTodo,
 		},
-		{ href: "/calendar", label: "日历", icon: CalendarDays },
-		{ href: "/gantt", label: "甘特图", icon: ChartGantt },
-		{ href: "/notifications", label: "通知", icon: Bell, count: unread },
+		{ href: "/calendar", label: "日历视图", icon: CalendarDays },
+		{ href: "/gantt", label: "甘特视图", icon: ChartGantt },
+		{ href: "/notifications", label: "站内通知", icon: Bell, count: unread },
 	];
 	const admin: NavItem[] =
 		me.role === "admin"
 			? [
-					{ href: "/admin/users", label: "成员与管理员", icon: Users },
-					{ href: "/admin/tags", label: "标签", icon: Tags },
-					{ href: "/admin/trash", label: "回收站", icon: Trash2 },
+					{ href: "/admin/users", label: "成员管理", icon: Users },
+					{ href: "/admin/tags", label: "标签管理", icon: Tags },
+					{ href: "/admin/trash", label: "已删单子", icon: Trash2 },
 					{ href: "/admin/audit", label: "审计日志", icon: ScrollText },
 				]
 			: [];

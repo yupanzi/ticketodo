@@ -9,7 +9,7 @@ import {
 } from "~/lib/schedule-params";
 import { getQueryClient, HydrateClient, trpc } from "~/trpc/server";
 
-export const metadata: Metadata = { title: "甘特图" };
+export const metadata: Metadata = { title: "甘特视图" };
 
 /** `?from=2026-11-02&scope=reported`：链接里带着看的是哪几周、谁的 */
 export default async function GanttPage({ searchParams }: PageProps<"/gantt">) {

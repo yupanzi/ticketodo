@@ -35,7 +35,7 @@ export function AdminUsers() {
 		<>
 			<PageHeader
 				description="登录过 ticketodo 的人。授予与撤销都进审计；至少保留一名管理员。"
-				title="成员与管理员"
+				title="成员管理"
 			/>
 			<Panel flush>
 				<Table>

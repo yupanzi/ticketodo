@@ -103,7 +103,7 @@ function describe(e: Event): string {
 		case "item.delete":
 			return "删除了这张单";
 		case "item.restore":
-			return "从回收站恢复了这张单";
+			return "恢复了这张单";
 		default:
 			return e.summary ?? e.action;
 	}

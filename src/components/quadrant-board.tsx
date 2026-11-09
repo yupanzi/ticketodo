@@ -408,7 +408,7 @@ export function QuadrantBoard() {
 					<ScopeTabs onChange={setScope} options={SCOPES} value={scope} />
 				}
 				description="按「重要 × 紧急」安排手上的事；新 ticket 先进「待定级」，由负责人拖进象限"
-				title="四象限"
+				title="象限看板"
 			/>
 			<Summary />
 			{isLoading ? (

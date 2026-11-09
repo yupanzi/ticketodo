@@ -492,7 +492,7 @@ export async function ganttItems(ctx: ServiceContext, input: ScheduleInput) {
 
 /** 管理员回收站 */
 export async function trashItems(ctx: ServiceContext): Promise<ItemView[]> {
-	if (!isAdmin(ctx.actor)) throw forbidden("只有管理员能看回收站");
+	if (!isAdmin(ctx.actor)) throw forbidden("只有管理员能看已删单子");
 	const rows = await selectItems(ctx.db)
 		.where(isNotNull(items.deletedAt))
 		.orderBy(desc(items.deletedAt))
@@ -948,7 +948,7 @@ export async function restoreItem(
 	await ctx.db.transaction(async (tx) => {
 		const row = await lockVisible(tx, ctx, code);
 		if (!canRestore(ctx.actor, row))
-			throw forbidden("只有管理员能从回收站恢复", target(row));
+			throw forbidden("只有管理员能恢复已删的单", target(row));
 		await tx
 			.update(items)
 			.set({ deletedAt: null, deletedBy: null })

@@ -139,7 +139,7 @@ export function ItemGantt({
 						不在图上
 					</>
 				}
-				title="甘特图"
+				title="甘特视图"
 			/>
 			<PagerBar
 				atReset={start === defaultGanttStart(today)}

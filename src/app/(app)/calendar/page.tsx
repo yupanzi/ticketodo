@@ -9,7 +9,7 @@ import {
 } from "~/lib/schedule-params";
 import { getQueryClient, HydrateClient, trpc } from "~/trpc/server";
 
-export const metadata: Metadata = { title: "日历" };
+export const metadata: Metadata = { title: "日历视图" };
 
 /** `?month=2026-11&scope=reported`：链接里带着看的是哪个月、谁的 */
 export default async function CalendarPage({

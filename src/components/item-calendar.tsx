@@ -96,7 +96,7 @@ export function ItemCalendar({
 					/>
 				}
 				description="按期望完成日期排；已关闭的不显示"
-				title="日历"
+				title="日历视图"
 			/>
 			<PagerBar
 				atReset={month === thisMonth}

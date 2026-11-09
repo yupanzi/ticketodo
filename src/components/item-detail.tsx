@@ -352,7 +352,7 @@ function DeleteDialog({
 		trpc.item.delete.mutationOptions({
 			onSuccess: () => {
 				void qc.invalidateQueries({ queryKey: trpc.item.pathKey() });
-				toast.success(`${item.code} 已移入回收站`);
+				toast.success(`${item.code} 已删除`);
 				router.push("/");
 			},
 			onError: (err) => toast.error(err.message),
@@ -364,7 +364,7 @@ function DeleteDialog({
 				<AlertDialogHeader>
 					<AlertDialogTitle>删除 {item.code}？</AlertDialogTitle>
 					<AlertDialogDescription>
-						删除后所有人都看不到这张单，管理员可以从回收站恢复。
+						删除后所有人都看不到这张单，管理员可以在「已删单子」里恢复。
 					</AlertDialogDescription>
 				</AlertDialogHeader>
 				<AlertDialogFooter>
@@ -482,7 +482,7 @@ export function ItemDetail({ code }: { code: string }) {
 						onClick={() => restore.mutate({ code })}
 					>
 						<RotateCcw />
-						从回收站恢复
+						恢复这张单
 					</Button>
 				)}
 				{can.delete && (

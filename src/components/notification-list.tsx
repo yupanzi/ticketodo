@@ -95,7 +95,7 @@ export function NotificationList() {
 					</>
 				}
 				description="被指派、状态变更、评论与 @、到期提醒"
-				title="通知"
+				title="站内通知"
 			/>
 			<Panel className="max-w-4xl" flush>
 				{rows.length > 0 ? (
