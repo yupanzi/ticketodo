@@ -1,3 +1,10 @@
+## [0.3.0](https://github.com/yupanzi/ticketodo/compare/v0.2.0...v0.3.0) (2026-11-09)
+
+### Features
+
+* **ui:** 接口密钥与密钥管理页，时间线、评论、审计标出经 API key 的操作 ([ee0bc08](https://github.com/yupanzi/ticketodo/commit/ee0bc081b77270064cabf7e724a2c2bd79a12df1))
+* 统一 API：浏览器与 AI 共用 /api/v1 的 REST 接口，支持个人 API key ([6d65ceb](https://github.com/yupanzi/ticketodo/commit/6d65cebfd2c52d1139ee6261c8f8cc48e8bc16c3))
+
 ## [0.2.0](https://github.com/yupanzi/ticketodo/compare/v0.1.0...v0.2.0) (2026-11-09)
 
 ### Features
