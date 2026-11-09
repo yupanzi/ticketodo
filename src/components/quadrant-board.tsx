@@ -50,6 +50,7 @@ import {
 	TagBadge,
 	TodoBadge,
 } from "./badges";
+import { useItemCache } from "./item-cache";
 import { EmptyState, PageHeader } from "./layout";
 import { type Me, useMe } from "./me-context";
 import { UserAvatar } from "./user-avatar";
@@ -353,6 +354,7 @@ const ANNOUNCEMENTS: Announcements = {
 export function QuadrantBoard() {
 	const trpc = useTRPC();
 	const qc = useQueryClient();
+	const cache = useItemCache();
 	const [scope, setScope] = useState(DEFAULT_BOARD_SCOPE);
 	const boardKey = trpc.item.board.queryKey({ scope });
 	const { data, isLoading } = useQuery(trpc.item.board.queryOptions({ scope }));
@@ -371,15 +373,13 @@ export function QuadrantBoard() {
 				);
 				return { prev };
 			},
+			// 接口回的详情直接换上，看板、概览、列表在后台刷新（同详情页）
+			onSuccess: cache.apply,
 			onError: (err, _vars, context) => {
 				qc.setQueryData(boardKey, context?.prev);
 				toast.error(err.message);
+				void qc.invalidateQueries({ queryKey: trpc.item.board.pathKey() });
 			},
-			onSettled: () =>
-				Promise.all([
-					qc.invalidateQueries({ queryKey: trpc.item.board.pathKey() }),
-					qc.invalidateQueries({ queryKey: trpc.item.summary.queryKey() }),
-				]),
 		}),
 	);
 
