@@ -128,11 +128,13 @@ const EVENT_ICON: Record<
 	"item.restore": RotateCcw,
 };
 
+/** 相对时间在服务端渲染与浏览器接管之间可能跨过一分钟：差一点不算错，不报 hydration 警告 */
 function Time({ at }: { at: Timestamp }) {
 	return (
 		<time
 			className="shrink-0 text-muted-foreground text-xs"
 			dateTime={new Date(at).toISOString()}
+			suppressHydrationWarning
 			title={formatDateTime(at)}
 		>
 			{formatRelative(at)}

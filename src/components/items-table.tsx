@@ -327,6 +327,7 @@ export function ItemsTable({ initial }: { initial: ListFilterState }) {
 								</TableCell>
 								<TableCell
 									className="text-muted-foreground text-xs"
+									suppressHydrationWarning
 									title={formatDateTime(i.updatedAt)}
 								>
 									{formatRelative(i.updatedAt)}

@@ -1,5 +1,10 @@
 import { SmartCoercionPlugin } from "@orpc/json-schema";
 import { OpenAPIHandler } from "@orpc/openapi/fetch";
+import type {
+	StandardHandlerOptions,
+	StandardHandlerPlugin,
+} from "@orpc/server/standard";
+import type { z } from "zod";
 
 import { getServerEnv } from "~/server/env";
 
@@ -8,13 +13,62 @@ import { API_PREFIX, schemaConverters } from "./openapi";
 import { apiInterceptor } from "./orpc";
 import { router } from "./router";
 
+const WRAPPERS = new Set(["optional", "default", "nullable", "prefault"]);
+
+function isArraySchema(schema: z.core.$ZodType): boolean {
+	let s = schema;
+	while (WRAPPERS.has(s._zod.def.type))
+		s = (s._zod.def as unknown as { innerType: z.core.$ZodType }).innerType;
+	return s._zod.def.type === "array";
+}
+
+/**
+ * query 里只给了一个值（`?statuses=open`）而 schema 要数组时，当作一个元素的数组：AI 与 curl
+ * 多半这么写，bracket notation 只有写成 `statuses[]=open` 才是数组。只管顶层字段。
+ * `order` 比 SmartCoercion 大：后 init、排在它前面，包成数组后元素照样被还原成数字。
+ */
+class ScalarToArrayPlugin implements StandardHandlerPlugin<Context> {
+	order = 1;
+	init(options: StandardHandlerOptions<Context>) {
+		options.clientInterceptors ??= [];
+		options.clientInterceptors.unshift((o) => {
+			const schema = o.procedure["~orpc"].inputSchema as
+				| z.core.$ZodType
+				| undefined;
+			const input = o.input;
+			if (
+				schema?._zod?.def.type !== "object" ||
+				typeof input !== "object" ||
+				input === null
+			)
+				return o.next();
+			const shape = (schema._zod.def as unknown as z.core.$ZodObjectDef).shape;
+			const fixed: Record<string, unknown> = { ...input };
+			for (const [key, value] of Object.entries(fixed)) {
+				const field = shape[key];
+				if (
+					value !== undefined &&
+					!Array.isArray(value) &&
+					field &&
+					isArraySchema(field)
+				)
+					fixed[key] = [value];
+			}
+			return o.next({ ...o, input: fixed });
+		});
+	}
+}
+
 let handler: OpenAPIHandler<Context> | undefined;
 
 /** 惰性：构建期会 import 路由模块，别在模块顶层建 */
 function getHandler(): OpenAPIHandler<Context> {
 	handler ??= new OpenAPIHandler(router, {
 		// GET 的参数在 query string 里全是字符串：按 schema 还原成数字、布尔
-		plugins: [new SmartCoercionPlugin({ schemaConverters })],
+		plugins: [
+			new SmartCoercionPlugin({ schemaConverters }),
+			new ScalarToArrayPlugin(),
+		],
 		clientInterceptors: [apiInterceptor],
 	});
 	return handler;

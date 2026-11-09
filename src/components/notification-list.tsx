@@ -155,6 +155,8 @@ export function NotificationList() {
 										<time
 											className="shrink-0 text-muted-foreground text-xs"
 											dateTime={n.createdAt}
+											// 理由同 item-activity 的 Time
+											suppressHydrationWarning
 											title={formatDateTime(n.createdAt)}
 										>
 											{formatRelative(n.createdAt)}

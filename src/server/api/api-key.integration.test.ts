@@ -97,6 +97,9 @@ describe.skipIf(!hasTestDb)("API key", () => {
 		);
 		expect(list.status).toBe(200);
 		expect(list.body.items.length).toBeLessThanOrEqual(5);
+		// 只给一个值、不写 []：当作一个元素的数组，元素照样还原成数字
+		const single = await call(token, "GET", "/items?statuses=open&tagIds=1");
+		expect(single.status).toBe(200);
 		const created = await call(token, "POST", "/items", {
 			type: "todo",
 			title: "x",

@@ -6,6 +6,8 @@ import {
 	CalendarDays,
 	ChartGantt,
 	ChevronsUpDown,
+	KeyRound,
+	KeySquare,
 	LayoutGrid,
 	ListTodo,
 	LogOut,
@@ -71,6 +73,7 @@ function useNav() {
 		{ href: "/calendar", label: "日历视图", icon: CalendarDays },
 		{ href: "/gantt", label: "甘特视图", icon: ChartGantt },
 		{ href: "/notifications", label: "站内通知", icon: Bell, count: unread },
+		{ href: "/settings/api-keys", label: "接口密钥", icon: KeyRound },
 	];
 	const admin: NavItem[] =
 		me.role === "admin"
@@ -78,6 +81,7 @@ function useNav() {
 					{ href: "/admin/users", label: "成员管理", icon: Users },
 					{ href: "/admin/tags", label: "标签管理", icon: Tags },
 					{ href: "/admin/trash", label: "已删单子", icon: Trash2 },
+					{ href: "/admin/api-keys", label: "密钥管理", icon: KeySquare },
 					{ href: "/admin/audit", label: "审计日志", icon: ScrollText },
 				]
 			: [];
